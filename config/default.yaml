@@ -1,0 +1,96 @@
+# tig-gh デフォルト設定ファイル
+# このファイルを ~/.config/tig-gh/config.yaml にコピーして使用してください
+
+# GitHub関連の設定
+github:
+  # GitHubパーソナルアクセストークン
+  # 環境変数 GITHUB_TOKEN からも読み込み可能
+  token: ""
+
+  # デフォルトのリポジトリオーナー（組織名またはユーザー名）
+  default_owner: ""
+
+  # デフォルトのリポジトリ名
+  default_repo: ""
+
+  # GitHub APIのベースURL（GitHub Enterpriseの場合は変更）
+  api_base_url: "https://api.github.com/"
+
+  # GitHub UploadのベースURL
+  upload_base_url: "https://uploads.github.com/"
+
+  # APIリクエストのタイムアウト（秒単位で指定、実際はtime.Durationとして解釈）
+  request_timeout: 30s
+
+  # レート制限のバッファ（残りリクエスト数がこれ以下の場合は待機）
+  rate_limit_buffer: 10
+
+# UI関連の設定
+ui:
+  # カラーテーマ: "light", "dark", "auto"
+  # autoの場合はターミナルの設定を自動検出
+  theme: "auto"
+
+  # 起動時のデフォルトビュー: "issues", "prs", "commits", "repos"
+  default_view: "issues"
+
+  # 一度に表示するアイテム数
+  page_size: 50
+
+  # アイコン表示の有効/無効
+  show_icons: true
+
+  # 日付のフォーマット（Go time.Format形式）
+  date_format: "2006-01-02 15:04"
+
+  # カスタムキーバインディング
+  key_bindings:
+    # 基本操作
+    quit: "q"
+    help: "?"
+    refresh: "r"
+    search: "/"
+    filter: "f"
+
+    # ナビゲーション
+    up: "k"
+    down: "j"
+    first_item: "g"
+    last_item: "G"
+    page_up: "ctrl+u"
+    page_down: "ctrl+d"
+
+    # 選択と操作
+    select: "enter"
+    back: "esc"
+
+    # ビュー切り替え
+    next_view: "tab"
+    prev_view: "shift+tab"
+
+    # アクション
+    new_issue: "n"
+    edit: "e"
+    comment: "c"
+    assign: "a"
+    label: "l"
+    close: "x"
+    open: "o"
+
+# キャッシュ関連の設定
+cache:
+  # キャッシュ機能の有効/無効
+  enabled: true
+
+  # キャッシュの有効期限
+  ttl: 15m
+
+  # ファイルキャッシュのディレクトリ
+  # 空の場合は ~/.cache/tig-gh が使用される
+  dir: ""
+
+  # メモリキャッシュの最大サイズ（バイト）
+  max_size: 104857600  # 100MB
+
+  # ファイルキャッシュの使用有無
+  use_file_cache: true
