@@ -101,6 +101,21 @@ var (
 			Bold(true).
 			Padding(1, 2)
 
+	// 成功スタイル
+	SuccessStyle = lipgloss.NewStyle().
+			Foreground(ColorSuccess).
+			Bold(true)
+
+	// 警告スタイル
+	WarningStyle = lipgloss.NewStyle().
+			Foreground(ColorWarning).
+			Bold(true)
+
+	// 情報スタイル
+	InfoStyle = lipgloss.NewStyle().
+			Foreground(ColorInfo).
+			Bold(true)
+
 	// ローディングスタイル
 	LoadingStyle = lipgloss.NewStyle().
 			Foreground(ColorSecondary).
