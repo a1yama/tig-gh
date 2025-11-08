@@ -50,3 +50,6 @@ tmp/
 # Build artifacts
 *.tar.gz
 *.zip
+
+# Binary executable (root directory only)
+/tig-gh

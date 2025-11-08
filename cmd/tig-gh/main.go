@@ -8,6 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/a1yama/tig-gh/internal/app/usecase"
+	"github.com/a1yama/tig-gh/internal/domain/repository"
+	"github.com/a1yama/tig-gh/internal/infra/cache"
 	"github.com/a1yama/tig-gh/internal/infra/config"
 	"github.com/a1yama/tig-gh/internal/infra/git"
 	"github.com/a1yama/tig-gh/internal/infra/github"
@@ -106,10 +108,32 @@ func main() {
 	// GitHub クライアントの初期化
 	githubClient := github.NewClient(token)
 
-	// リポジトリの初期化
-	issueRepo := github.NewIssueRepository(githubClient)
-	prRepo := github.NewPullRequestRepository(githubClient)
+	// キャッシュの初期化
+	cacheConfig := cache.DefaultConfig()
+	cacheService, err := cache.NewCacheWithConfig(cacheConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to initialize cache: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Continuing without cache...\n")
+		cacheService = nil
+	}
+
+	// リポジトリの初期化（キャッシュあり）
+	baseIssueRepo := github.NewIssueRepository(githubClient)
+	basePRRepo := github.NewPullRequestRepository(githubClient)
 	commitRepo := github.NewCommitRepository(githubClient)
+
+	// キャッシュでラップ
+	var issueRepo repository.IssueRepository
+	var prRepo repository.PullRequestRepository
+
+	if cacheService != nil {
+		c := cacheService.(*cache.Cache)
+		issueRepo = cache.NewCachedIssueRepository(baseIssueRepo, c)
+		prRepo = cache.NewCachedPullRequestRepository(basePRRepo, c)
+	} else {
+		issueRepo = baseIssueRepo
+		prRepo = basePRRepo
+	}
 
 	// UseCaseの初期化
 	fetchIssuesUseCase := usecase.NewFetchIssuesUseCase(issueRepo)
