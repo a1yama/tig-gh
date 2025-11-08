@@ -335,6 +335,16 @@ func TestNewCacheWithConfig_InvalidConfig(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestNewCacheWithConfig_NoCacheEnabled(t *testing.T) {
+	config := DefaultConfig().
+		DisableMemoryCache().
+		DisableFileCache()
+
+	_, err := NewCacheWithConfig(config)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one cache type must be enabled")
+}
+
 func TestCache_GenerateKey(t *testing.T) {
 	config := DefaultConfig().DisableFileCache()
 	cache, err := NewCacheWithConfig(config)
@@ -361,7 +371,7 @@ func TestCache_GenerateKey(t *testing.T) {
 	assert.True(t, len(key3) > len("issues:owner:repo:"))
 }
 
-func TestCache_SetWithDefaultTTL(t *testing.T) {
+func TestCache_Set_TTLZeroIsUnlimited(t *testing.T) {
 	config := DefaultConfig().
 		DisableFileCache().
 		WithMemoryTTL(10 * time.Minute)
@@ -369,8 +379,27 @@ func TestCache_SetWithDefaultTTL(t *testing.T) {
 	cache, err := NewCacheWithConfig(config)
 	require.NoError(t, err)
 
-	// TTL=0で保存するとデフォルトTTLが使われる
+	// 従来のSet()でTTL=0は無期限（インターフェース仕様に従う）
 	err = cache.Set("test-key", "test-value", 0)
+	require.NoError(t, err)
+
+	value, ok := cache.Get("test-key")
+	require.True(t, ok)
+	assert.Equal(t, "test-value", value)
+}
+
+func TestCache_SetWithContext_UsesDefaultTTL(t *testing.T) {
+	config := DefaultConfig().
+		DisableFileCache().
+		WithMemoryTTL(10 * time.Minute)
+
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+
+	c := cache.(*Cache)
+
+	// SetWithContext でdefaultTTL=0の場合はConfigのデフォルトTTLが使われる
+	err = c.SetWithContext(context.Background(), "test-key", "test-value", 0)
 	require.NoError(t, err)
 
 	value, ok := cache.Get("test-key")

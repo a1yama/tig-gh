@@ -58,6 +58,11 @@ func NewCacheWithConfig(config *Config) (repository.CacheService, error) {
 		return nil, fmt.Errorf("invalid cache config: %w", err)
 	}
 
+	// 少なくとも1つのキャッシュが有効になっている必要がある
+	if !config.MemoryEnabled && !config.FileEnabled {
+		return nil, fmt.Errorf("at least one cache type must be enabled")
+	}
+
 	c := &Cache{
 		config:       config,
 		keyGenerator: NewKeyGenerator(),
@@ -126,30 +131,20 @@ func (c *Cache) GetWithContext(ctx context.Context, key string) (interface{}, bo
 
 // Set キーと値、有効期限を設定
 // メモリキャッシュとファイルキャッシュの両方に保存
+// ttl=0 の場合は無期限（インターフェース仕様に従う）
 func (c *Cache) Set(key string, value interface{}, ttl time.Duration) error {
 	var lastErr error
 
-	// TTLが0の場合はデフォルトTTLを使用
-	memoryTTL := ttl
-	if memoryTTL == 0 && c.config.MemoryEnabled {
-		memoryTTL = c.config.MemoryTTL
-	}
-
-	fileTTL := ttl
-	if fileTTL == 0 && c.config.FileEnabled {
-		fileTTL = c.config.FileTTL
-	}
-
 	// メモリキャッシュに保存
 	if c.memory != nil {
-		if err := c.memory.Set(key, value, memoryTTL); err != nil {
+		if err := c.memory.Set(key, value, ttl); err != nil {
 			lastErr = err
 		}
 	}
 
 	// ファイルキャッシュに保存
 	if c.file != nil {
-		if err := c.file.Set(key, value, fileTTL); err != nil {
+		if err := c.file.Set(key, value, ttl); err != nil {
 			lastErr = err
 		}
 	}
@@ -158,6 +153,7 @@ func (c *Cache) Set(key string, value interface{}, ttl time.Duration) error {
 }
 
 // SetWithContext コンテキストからオプションを読み取ってキーと値を設定
+// defaultTTL=0 の場合はConfigのデフォルトTTLを使用
 func (c *Cache) SetWithContext(ctx context.Context, key string, value interface{}, defaultTTL time.Duration) error {
 	opts := OptionsFromContext(ctx)
 
@@ -166,14 +162,21 @@ func (c *Cache) SetWithContext(ctx context.Context, key string, value interface{
 		return nil
 	}
 
-	// オプションからTTLを取得（未設定の場合はデフォルトを使用）
-	memoryTTL := opts.GetEffectiveTTL(c.config.MemoryTTL)
-	fileTTL := opts.GetEffectiveTTL(c.config.FileTTL)
+	// TTLの優先順位: 1. Options.TTL, 2. defaultTTL, 3. Config.MemoryTTL/FileTTL
+	var memoryTTL, fileTTL time.Duration
 
-	// defaultTTLが指定されている場合はそれを使う
-	if defaultTTL > 0 {
+	if opts.TTL != nil {
+		// Optionsで明示的にTTLが指定されている場合
+		memoryTTL = *opts.TTL
+		fileTTL = *opts.TTL
+	} else if defaultTTL > 0 {
+		// defaultTTLが指定されている場合
 		memoryTTL = defaultTTL
 		fileTTL = defaultTTL
+	} else {
+		// それ以外の場合はConfigのデフォルトTTLを使用
+		memoryTTL = c.config.MemoryTTL
+		fileTTL = c.config.FileTTL
 	}
 
 	var lastErr error
