@@ -121,6 +121,7 @@ func main() {
 	baseIssueRepo := github.NewIssueRepository(githubClient)
 	basePRRepo := github.NewPullRequestRepository(githubClient)
 	commitRepo := github.NewCommitRepository(githubClient)
+	searchRepo := github.NewSearchRepository(githubClient)
 
 	// キャッシュでラップ
 	var issueRepo repository.IssueRepository
@@ -139,12 +140,14 @@ func main() {
 	fetchIssuesUseCase := usecase.NewFetchIssuesUseCase(issueRepo)
 	fetchPRsUseCase := usecase.NewFetchPRsUseCase(prRepo)
 	fetchCommitsUseCase := usecase.NewFetchCommitsUseCase(commitRepo)
+	searchUseCase := usecase.NewSearchUseCase(searchRepo)
 
 	// TUIアプリケーションの初期化
 	app := ui.NewAppWithUseCases(
 		fetchIssuesUseCase,
 		fetchPRsUseCase,
 		fetchCommitsUseCase,
+		searchUseCase,
 		owner,
 		repo,
 	)

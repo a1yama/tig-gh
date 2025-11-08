@@ -16,6 +16,7 @@ const (
 	IssueListView ViewType = iota
 	PullRequestListView
 	CommitListView
+	SearchView
 )
 
 // App is the main application model
@@ -24,9 +25,11 @@ type App struct {
 	issueView           tea.Model
 	prView              tea.Model
 	commitView          tea.Model
+	searchView          tea.Model
 	fetchIssuesUseCase  *usecase.FetchIssuesUseCase
 	fetchPRsUseCase     *usecase.FetchPRsUseCase
 	fetchCommitsUseCase *usecase.FetchCommitsUseCase
+	searchUseCase       *usecase.SearchUseCase
 	owner               string
 	repo                string
 	width               int
@@ -35,6 +38,7 @@ type App struct {
 	issueViewInited     bool
 	prViewInited        bool
 	commitViewInited    bool
+	searchViewInited    bool
 }
 
 // NewApp creates a new application instance (for backward compatibility)
@@ -55,6 +59,7 @@ func NewAppWithUseCases(
 	fetchIssuesUseCase *usecase.FetchIssuesUseCase,
 	fetchPRsUseCase *usecase.FetchPRsUseCase,
 	fetchCommitsUseCase *usecase.FetchCommitsUseCase,
+	searchUseCase *usecase.SearchUseCase,
 	owner, repo string,
 ) *App {
 	return &App{
@@ -62,9 +67,11 @@ func NewAppWithUseCases(
 		issueView:           views.NewIssueViewWithUseCase(fetchIssuesUseCase, owner, repo),
 		prView:              views.NewPRViewWithUseCase(fetchPRsUseCase, owner, repo),
 		commitView:          views.NewCommitViewWithUseCase(fetchCommitsUseCase, owner, repo),
+		searchView:          views.NewSearchViewWithUseCase(searchUseCase, owner, repo),
 		fetchIssuesUseCase:  fetchIssuesUseCase,
 		fetchPRsUseCase:     fetchPRsUseCase,
 		fetchCommitsUseCase: fetchCommitsUseCase,
+		searchUseCase:       searchUseCase,
 		owner:               owner,
 		repo:                repo,
 		ready:               false,
@@ -118,6 +125,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
+		case "s":
+			// Switch to search view
+			a.currentView = SearchView
+			if !a.searchViewInited {
+				a.searchViewInited = true
+				return a, a.searchView.Init()
+			}
+			return a, nil
+
 		default:
 			// Delegate to current view
 			return a.delegateToCurrentView(msg)
@@ -136,6 +152,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		a.commitView, cmd = a.commitView.Update(msg)
+		cmds = append(cmds, cmd)
+
+		a.searchView, cmd = a.searchView.Update(msg)
 		cmds = append(cmds, cmd)
 
 		return a, tea.Batch(cmds...)
@@ -161,6 +180,10 @@ func (a *App) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case CommitListView:
 		a.commitView, cmd = a.commitView.Update(msg)
+		return a, cmd
+
+	case SearchView:
+		a.searchView, cmd = a.searchView.Update(msg)
 		return a, cmd
 
 	default:
@@ -195,6 +218,9 @@ func (a *App) View() string {
 
 	case CommitListView:
 		return a.commitView.View()
+
+	case SearchView:
+		return a.searchView.View()
 
 	default:
 		return "Unknown view"
