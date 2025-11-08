@@ -13,7 +13,7 @@ import (
 // TestPRDetailView_Init tests the initialization of the PR detail view
 func TestPRDetailView_Init(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	if view == nil {
 		t.Fatal("NewPRDetailView returned nil")
@@ -94,7 +94,7 @@ func TestPRDetailView_Update_KeyboardInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pr := createTestPullRequest()
-			view := NewPRDetailView(pr)
+			view := NewPRDetailView(pr, "owner", "repo", nil)
 
 			if tt.shouldScroll {
 				view.scrollOffset = tt.scrollBefore
@@ -165,7 +165,7 @@ func TestPRDetailView_Update_TabSwitching(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pr := createTestPullRequest()
-			view := NewPRDetailView(pr)
+			view := NewPRDetailView(pr, "owner", "repo", nil)
 
 			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)}
 			model, _ := view.Update(msg)
@@ -186,7 +186,7 @@ func TestPRDetailView_Update_TabSwitching(t *testing.T) {
 // TestPRDetailView_Update_ScrollBounds tests scroll boundary conditions
 func TestPRDetailView_Update_ScrollBounds(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.scrollOffset = 0
 
 	// Try to scroll up from the top
@@ -202,7 +202,7 @@ func TestPRDetailView_Update_ScrollBounds(t *testing.T) {
 // TestPRDetailView_Update_MergeKey tests merge key functionality
 func TestPRDetailView_Update_MergeKey(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")}
 	_, cmd := view.Update(msg)
@@ -216,7 +216,7 @@ func TestPRDetailView_Update_MergeKey(t *testing.T) {
 // TestPRDetailView_Update_DiffKey tests diff key functionality
 func TestPRDetailView_Update_DiffKey(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")}
 	_, cmd := view.Update(msg)
@@ -230,7 +230,7 @@ func TestPRDetailView_Update_DiffKey(t *testing.T) {
 // TestPRDetailView_Update_WindowSize tests window size message handling
 func TestPRDetailView_Update_WindowSize(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	msg := tea.WindowSizeMsg{Width: 100, Height: 50}
 	model, _ := view.Update(msg)
@@ -248,7 +248,7 @@ func TestPRDetailView_Update_WindowSize(t *testing.T) {
 // TestPRDetailView_Update_LoadingState tests loading state handling
 func TestPRDetailView_Update_LoadingState(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.loading = true
 	view.width = 80
 	view.height = 24
@@ -268,7 +268,7 @@ func TestPRDetailView_Update_LoadingState(t *testing.T) {
 // TestPRDetailView_Update_ErrorState tests error state handling
 func TestPRDetailView_Update_ErrorState(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 80
 	view.height = 24
 
@@ -289,7 +289,7 @@ func TestPRDetailView_Update_ErrorState(t *testing.T) {
 // TestPRDetailView_View_OverviewTab tests the rendering of overview tab
 func TestPRDetailView_View_OverviewTab(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 	view.currentTab = tabOverview
@@ -320,7 +320,7 @@ func TestPRDetailView_View_OverviewTab(t *testing.T) {
 // TestPRDetailView_View_FilesTab tests the rendering of files tab
 func TestPRDetailView_View_FilesTab(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 	view.currentTab = tabFiles
@@ -340,7 +340,7 @@ func TestPRDetailView_View_FilesTab(t *testing.T) {
 // TestPRDetailView_View_CommitsTab tests the rendering of commits tab
 func TestPRDetailView_View_CommitsTab(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 	view.currentTab = tabCommits
@@ -360,7 +360,7 @@ func TestPRDetailView_View_CommitsTab(t *testing.T) {
 // TestPRDetailView_View_CommentsTab tests the rendering of comments tab
 func TestPRDetailView_View_CommentsTab(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 	view.currentTab = tabComments
@@ -380,7 +380,7 @@ func TestPRDetailView_View_CommentsTab(t *testing.T) {
 // TestPRDetailView_View_WithoutSize tests rendering without size set
 func TestPRDetailView_View_WithoutSize(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	output := view.View()
 
@@ -393,7 +393,7 @@ func TestPRDetailView_View_WithoutSize(t *testing.T) {
 // TestPRDetailView_View_WithReviews tests rendering with reviews
 func TestPRDetailView_View_WithReviews(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 
@@ -408,7 +408,7 @@ func TestPRDetailView_View_WithReviews(t *testing.T) {
 // TestPRDetailView_OpenInBrowser tests the browser open functionality
 func TestPRDetailView_OpenInBrowser(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}
 	_, cmd := view.Update(msg)
@@ -422,7 +422,7 @@ func TestPRDetailView_OpenInBrowser(t *testing.T) {
 // TestPRDetailView_GoToTop tests the g key to go to top
 func TestPRDetailView_GoToTop(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.scrollOffset = 10
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}
@@ -437,7 +437,7 @@ func TestPRDetailView_GoToTop(t *testing.T) {
 // TestPRDetailView_GoToBottom tests the G key to go to bottom
 func TestPRDetailView_GoToBottom(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.scrollOffset = 0
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}
@@ -455,7 +455,7 @@ func TestPRDetailView_GoToBottom(t *testing.T) {
 // TestPRDetailView_Init_Command tests the Init command
 func TestPRDetailView_Init_Command(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	cmd := view.Init()
 	if cmd != nil {
@@ -466,7 +466,7 @@ func TestPRDetailView_Init_Command(t *testing.T) {
 // TestPRDetailView_Update_CtrlC tests ctrl+c handling
 func TestPRDetailView_Update_CtrlC(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
 	_, cmd := view.Update(msg)
@@ -480,7 +480,7 @@ func TestPRDetailView_Update_CtrlC(t *testing.T) {
 func TestPRDetailView_renderHeader_Draft(t *testing.T) {
 	pr := createTestPullRequest()
 	pr.Draft = true
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 
@@ -494,7 +494,7 @@ func TestPRDetailView_renderHeader_Draft(t *testing.T) {
 func TestPRDetailView_renderHeader_Merged(t *testing.T) {
 	pr := createTestPullRequest()
 	pr.Merged = true
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 
@@ -508,7 +508,7 @@ func TestPRDetailView_renderHeader_Merged(t *testing.T) {
 func TestPRDetailView_getMergeStatus_Conflicts(t *testing.T) {
 	pr := createTestPullRequest()
 	pr.Mergeable = false
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	status := view.getMergeStatus()
 	if !containsString(status, "Conflicts") {
@@ -525,7 +525,7 @@ func TestPRDetailView_getMergeStatus_ChangesRequested(t *testing.T) {
 			State: models.ReviewStateChangesRequested,
 		},
 	}
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	status := view.getMergeStatus()
 	if !containsString(status, "Changes requested") {
@@ -542,7 +542,7 @@ func TestPRDetailView_getMergeStatus_AwaitingReview(t *testing.T) {
 			State: models.ReviewStateApproved,
 		},
 	}
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	status := view.getMergeStatus()
 	if !containsString(status, "Awaiting review") {
@@ -554,7 +554,7 @@ func TestPRDetailView_getMergeStatus_AwaitingReview(t *testing.T) {
 func TestPRDetailView_getReviewsSummary_Empty(t *testing.T) {
 	pr := createTestPullRequest()
 	pr.Reviews = []models.Review{}
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	summary := view.getReviewsSummary()
 	if !containsString(summary, "No reviews") {
@@ -571,7 +571,7 @@ func TestPRDetailView_getReviewsSummary_WithPending(t *testing.T) {
 			State: models.ReviewStatePending,
 		},
 	}
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	summary := view.getReviewsSummary()
 	if summary == "" {
@@ -583,7 +583,7 @@ func TestPRDetailView_getReviewsSummary_WithPending(t *testing.T) {
 func TestPRDetailView_renderBody_Empty(t *testing.T) {
 	pr := createTestPullRequest()
 	pr.Body = ""
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 
 	output := view.renderBody()
 	if !containsString(output, "No description") {
@@ -595,9 +595,10 @@ func TestPRDetailView_renderBody_Empty(t *testing.T) {
 func TestPRDetailView_renderCommentsTab_Empty(t *testing.T) {
 	pr := createTestPullRequest()
 	pr.Comments = 0
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
+	view.commentsLoading = false // Set loading to false for test
 
 	output := view.renderCommentsTab()
 	if !containsString(output, "No comments") {
@@ -608,7 +609,7 @@ func TestPRDetailView_renderCommentsTab_Empty(t *testing.T) {
 // TestPRDetailView_applyScroll_LargeContent tests scrolling with large content
 func TestPRDetailView_applyScroll_LargeContent(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 30
 
@@ -631,7 +632,7 @@ func TestPRDetailView_applyScroll_LargeContent(t *testing.T) {
 // TestPRDetailView_TabContent_AllTabs tests all tab content rendering
 func TestPRDetailView_TabContent_AllTabs(t *testing.T) {
 	pr := createTestPullRequest()
-	view := NewPRDetailView(pr)
+	view := NewPRDetailView(pr, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 

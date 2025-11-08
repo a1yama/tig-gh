@@ -1,10 +1,12 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
+	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -31,32 +33,75 @@ type diffMsg struct {
 	pr *models.PullRequest
 }
 
+// prCommentsLoadedMsg is a message when comments are loaded
+type prCommentsLoadedMsg struct {
+	comments []*models.Comment
+	err      error
+}
+
 // PRDetailView is the model for the PR detail view
 type PRDetailView struct {
-	pr           *models.PullRequest
-	currentTab   prTab
-	scrollOffset int
-	loading      bool
-	err          error
-	width        int
-	height       int
-	renderer     *glamour.TermRenderer
+	pr              *models.PullRequest
+	comments        []*models.Comment
+	commentsLoading bool
+	owner           string
+	repo            string
+	prRepo          repository.PullRequestRepository
+	currentTab      prTab
+	scrollOffset    int
+	loading         bool
+	err             error
+	width           int
+	height          int
+	renderer        *glamour.TermRenderer
 }
 
 // NewPRDetailView creates a new PR detail view
-func NewPRDetailView(pr *models.PullRequest) *PRDetailView {
+func NewPRDetailView(pr *models.PullRequest, owner, repo string, prRepo repository.PullRequestRepository) *PRDetailView {
 	return &PRDetailView{
-		pr:           pr,
-		currentTab:   tabOverview,
-		scrollOffset: 0,
-		loading:      false,
-		renderer:     newMarkdownRenderer(80),
+		pr:              pr,
+		owner:           owner,
+		repo:            repo,
+		prRepo:          prRepo,
+		currentTab:      tabOverview,
+		scrollOffset:    0,
+		loading:         false,
+		commentsLoading: true, // Start loading comments
+		renderer:        newMarkdownRenderer(80),
 	}
 }
 
 // Init initializes the PR detail view
 func (m *PRDetailView) Init() tea.Cmd {
+	if m.prRepo != nil {
+		return m.loadComments()
+	}
 	return nil
+}
+
+// loadComments loads comments for the PR
+func (m *PRDetailView) loadComments() tea.Cmd {
+	return func() tea.Msg {
+		if m.prRepo == nil {
+			return prCommentsLoadedMsg{
+				comments: nil,
+				err:      fmt.Errorf("PR repository not available"),
+			}
+		}
+
+		comments, err := m.prRepo.ListComments(
+			context.Background(),
+			m.owner,
+			m.repo,
+			m.pr.Number,
+			nil, // Use default options
+		)
+
+		return prCommentsLoadedMsg{
+			comments: comments,
+			err:      err,
+		}
+	}
 }
 
 // Update handles messages
@@ -68,6 +113,15 @@ func (m *PRDetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+
+	case prCommentsLoadedMsg:
+		m.commentsLoading = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.comments = msg.comments
+		}
 		return m, nil
 	}
 
@@ -525,15 +579,52 @@ func (m *PRDetailView) renderCommitsTab() string {
 func (m *PRDetailView) renderCommentsTab() string {
 	var s strings.Builder
 
-	s.WriteString(fmt.Sprintf("Comments (%d)\n\n", m.pr.Comments))
+	s.WriteString(fmt.Sprintf("Comments (%d)\n\n", len(m.comments)))
 
-	if m.pr.Comments == 0 {
+	if m.commentsLoading {
+		s.WriteString(styles.MutedStyle.Render("Loading comments..."))
+	} else if len(m.comments) == 0 {
 		s.WriteString(styles.MutedStyle.Render("No comments yet."))
 	} else {
-		s.WriteString(styles.MutedStyle.Render("Comment thread will be implemented here."))
+		s.WriteString(m.renderCommentsList())
 	}
 
 	return m.applyScroll(s.String())
+}
+
+// renderCommentsList renders the list of comments
+func (m *PRDetailView) renderCommentsList() string {
+	var s strings.Builder
+
+	for i, comment := range m.comments {
+		if i > 0 {
+			s.WriteString("\n")
+			s.WriteString(styles.MutedStyle.Render(strings.Repeat("─", m.width-4)))
+			s.WriteString("\n\n")
+		}
+
+		// Comment author and time
+		authorStyle := styles.BoldStyle
+		author := authorStyle.Render(comment.User.Login)
+		timeStr := styles.MutedStyle.Render(formatTime(comment.CreatedAt))
+
+		s.WriteString(fmt.Sprintf("%s commented %s", author, timeStr))
+		s.WriteString("\n\n")
+
+		// Comment body (with markdown rendering)
+		if m.renderer != nil && comment.Body != "" {
+			rendered, err := m.renderer.Render(comment.Body)
+			if err == nil {
+				s.WriteString(rendered)
+			} else {
+				s.WriteString(comment.Body)
+			}
+		} else {
+			s.WriteString(comment.Body)
+		}
+	}
+
+	return s.String()
 }
 
 // applyScroll applies scrolling to content

@@ -7,21 +7,24 @@ import (
 	"strings"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
+	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// FetchPRsUseCase defines the interface for fetching pull requests
-type FetchPRsUseCase interface {
-	Execute(ctx context.Context, owner, repo string, opts *models.PROptions) ([]*models.PullRequest, error)
-}
 
 // prsLoadedMsg is sent when pull requests are loaded
 type prsLoadedMsg struct {
 	prs []*models.PullRequest
 	err error
+}
+
+// FetchPRsUseCase defines the interface for fetching pull requests
+type FetchPRsUseCase interface {
+	Execute(ctx context.Context, owner, repo string, opts *models.PROptions) ([]*models.PullRequest, error)
+	GetRepository() repository.PullRequestRepository
 }
 
 // PRView is the model for the pull request list view
@@ -85,6 +88,32 @@ func (m *PRView) Init() tea.Cmd {
 
 // Update handles messages
 func (m *PRView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// If showing detail view, delegate to detail view first
+	if m.showingDetail && m.detailView != nil {
+		// Let detail view handle all messages except backMsg
+		if _, isBackMsg := msg.(backMsg); isBackMsg {
+			m.showingDetail = false
+			m.detailView = nil
+			return m, nil
+		}
+
+		// Delegate to detail view
+		updatedModel, cmd := m.detailView.Update(msg)
+		m.detailView = updatedModel.(*PRDetailView)
+
+		// Check if it's a KeyMsg for back navigation
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			keyStr := keyMsg.String()
+			if keyStr == "q" || keyStr == "esc" {
+				m.showingDetail = false
+				m.detailView = nil
+				return m, nil
+			}
+		}
+
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case backMsg:
 		// Return from detail view
@@ -98,19 +127,6 @@ func (m *PRView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// If showing detail view, check for back navigation first
-		if m.showingDetail && m.detailView != nil {
-			if keyStr == "q" || keyStr == "esc" {
-				m.showingDetail = false
-				m.detailView = nil
-				return m, nil
-			}
-			// Otherwise delegate to detail view
-			var cmd tea.Cmd
-			updatedModel, cmd := m.detailView.Update(msg)
-			m.detailView = updatedModel.(*PRDetailView)
-			return m, cmd
-		}
 		// Handle key press in list view
 		return m.handleKeyPress(msg)
 
@@ -181,7 +197,11 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// View PR detail
 		if len(m.prs) > 0 && m.cursor < len(m.prs) {
 			selectedPR := m.prs[m.cursor]
-			m.detailView = NewPRDetailView(selectedPR)
+			var prRepo repository.PullRequestRepository
+			if m.fetchPRsUseCase != nil {
+				prRepo = m.fetchPRsUseCase.GetRepository()
+			}
+			m.detailView = NewPRDetailView(selectedPR, m.owner, m.repo, prRepo)
 			m.detailView.width = m.width
 			m.detailView.height = m.height
 			m.showingDetail = true

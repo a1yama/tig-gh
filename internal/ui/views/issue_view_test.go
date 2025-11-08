@@ -8,13 +8,15 @@ import (
 	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
+	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // mockFetchIssuesUseCase is a mock implementation of FetchIssuesUseCase for testing
 type mockFetchIssuesUseCase struct {
-	executeFunc func(ctx context.Context, owner, repo string, opts *models.IssueOptions) ([]*models.Issue, error)
+	executeFunc      func(ctx context.Context, owner, repo string, opts *models.IssueOptions) ([]*models.Issue, error)
+	getRepositoryFunc func() repository.IssueRepository
 }
 
 func (m *mockFetchIssuesUseCase) Execute(ctx context.Context, owner, repo string, opts *models.IssueOptions) ([]*models.Issue, error) {
@@ -22,6 +24,13 @@ func (m *mockFetchIssuesUseCase) Execute(ctx context.Context, owner, repo string
 		return m.executeFunc(ctx, owner, repo, opts)
 	}
 	return nil, nil
+}
+
+func (m *mockFetchIssuesUseCase) GetRepository() repository.IssueRepository {
+	if m.getRepositoryFunc != nil {
+		return m.getRepositoryFunc()
+	}
+	return nil
 }
 
 func TestIssueView_Init(t *testing.T) {

@@ -9,13 +9,15 @@ import (
 	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
+	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // mockFetchPRsUseCase is a mock implementation of FetchPRsUseCase for testing
 type mockFetchPRsUseCase struct {
-	executeFunc func(ctx context.Context, owner, repo string, opts *models.PROptions) ([]*models.PullRequest, error)
+	executeFunc      func(ctx context.Context, owner, repo string, opts *models.PROptions) ([]*models.PullRequest, error)
+	getRepositoryFunc func() repository.PullRequestRepository
 }
 
 func (m *mockFetchPRsUseCase) Execute(ctx context.Context, owner, repo string, opts *models.PROptions) ([]*models.PullRequest, error) {
@@ -23,6 +25,13 @@ func (m *mockFetchPRsUseCase) Execute(ctx context.Context, owner, repo string, o
 		return m.executeFunc(ctx, owner, repo, opts)
 	}
 	return nil, nil
+}
+
+func (m *mockFetchPRsUseCase) GetRepository() repository.PullRequestRepository {
+	if m.getRepositoryFunc != nil {
+		return m.getRepositoryFunc()
+	}
+	return nil
 }
 
 func TestPRView_Init(t *testing.T) {

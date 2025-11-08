@@ -1,12 +1,13 @@
 package views
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
+	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -21,30 +22,73 @@ type openBrowserMsg struct {
 	url string
 }
 
+// issueCommentsLoadedMsg is a message when comments are loaded
+type issueCommentsLoadedMsg struct {
+	comments []*models.Comment
+	err      error
+}
+
 // IssueDetailView is the model for the issue detail view
 type IssueDetailView struct {
-	issue        *models.Issue
-	scrollOffset int
-	loading      bool
-	err          error
-	width        int
-	height       int
-	renderer     *glamour.TermRenderer
+	issue           *models.Issue
+	comments        []*models.Comment
+	commentsLoading bool
+	owner           string
+	repo            string
+	issueRepo       repository.IssueRepository
+	scrollOffset    int
+	loading         bool
+	err             error
+	width           int
+	height          int
+	renderer        *glamour.TermRenderer
 }
 
 // NewIssueDetailView creates a new issue detail view
-func NewIssueDetailView(issue *models.Issue) *IssueDetailView {
+func NewIssueDetailView(issue *models.Issue, owner, repo string, issueRepo repository.IssueRepository) *IssueDetailView {
 	return &IssueDetailView{
-		issue:        issue,
-		scrollOffset: 0,
-		loading:      false,
-		renderer:     newMarkdownRenderer(80),
+		issue:           issue,
+		owner:           owner,
+		repo:            repo,
+		issueRepo:       issueRepo,
+		scrollOffset:    0,
+		loading:         false,
+		commentsLoading: true, // Start loading comments
+		renderer:        newMarkdownRenderer(80),
 	}
 }
 
 // Init initializes the issue detail view
 func (m *IssueDetailView) Init() tea.Cmd {
+	if m.issueRepo != nil {
+		return m.loadComments()
+	}
 	return nil
+}
+
+// loadComments loads comments for the issue
+func (m *IssueDetailView) loadComments() tea.Cmd {
+	return func() tea.Msg {
+		if m.issueRepo == nil {
+			return issueCommentsLoadedMsg{
+				comments: nil,
+				err:      fmt.Errorf("issue repository not available"),
+			}
+		}
+
+		comments, err := m.issueRepo.ListComments(
+			context.Background(),
+			m.owner,
+			m.repo,
+			m.issue.Number,
+			nil, // Use default options
+		)
+
+		return issueCommentsLoadedMsg{
+			comments: comments,
+			err:      err,
+		}
+	}
 }
 
 // Update handles messages
@@ -56,6 +100,15 @@ func (m *IssueDetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+
+	case issueCommentsLoadedMsg:
+		m.commentsLoading = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.comments = msg.comments
+		}
 		return m, nil
 	}
 
@@ -108,12 +161,6 @@ func (m *IssueDetailView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // View renders the issue detail view
 func (m *IssueDetailView) View() string {
-	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if debugFile != nil {
-		fmt.Fprintf(debugFile, "[IssueDetailView.View] width=%d height=%d\n", m.width, m.height)
-		debugFile.Close()
-	}
-
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
 	}
@@ -126,25 +173,41 @@ func (m *IssueDetailView) View() string {
 		return m.renderError()
 	}
 
-	var s strings.Builder
+	// Build the full content first
+	var content strings.Builder
 
 	// Header
-	s.WriteString(m.renderHeader())
-	s.WriteString("\n\n")
+	content.WriteString(m.renderHeader())
+	content.WriteString("\n\n")
 
 	// Metadata
-	s.WriteString(m.renderMetadata())
-	s.WriteString("\n\n")
+	content.WriteString(m.renderMetadata())
+	content.WriteString("\n\n")
 
 	// Separator
-	s.WriteString(styles.Separator(m.width - 4))
-	s.WriteString("\n\n")
+	content.WriteString(styles.Separator(m.width - 4))
+	content.WriteString("\n\n")
 
-	// Body (with markdown rendering)
-	s.WriteString(m.renderBody())
-	s.WriteString("\n\n")
+	// Body (without internal scrolling)
+	content.WriteString(m.renderBodyContent())
+	content.WriteString("\n\n")
 
-	// Footer with help
+	// Comments
+	if len(m.comments) > 0 {
+		content.WriteString(m.renderComments())
+		content.WriteString("\n\n")
+	} else if m.commentsLoading {
+		content.WriteString(styles.MutedStyle.Render("Loading comments..."))
+		content.WriteString("\n\n")
+	}
+
+	// Apply scrolling to the entire content
+	scrolledContent := m.applyScrolling(content.String())
+
+	// Add footer
+	var s strings.Builder
+	s.WriteString(scrolledContent)
+	s.WriteString("\n")
 	s.WriteString(m.renderFooter())
 
 	return s.String()
@@ -232,8 +295,8 @@ func (m *IssueDetailView) renderMetadata() string {
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-// renderBody renders the issue body with markdown
-func (m *IssueDetailView) renderBody() string {
+// renderBodyContent renders the issue body with markdown (without scrolling)
+func (m *IssueDetailView) renderBodyContent() string {
 	if m.issue.Body == "" {
 		return styles.MutedStyle.Render("No description provided.")
 	}
@@ -245,45 +308,53 @@ func (m *IssueDetailView) renderBody() string {
 		return m.issue.Body
 	}
 
-	// Handle scrolling
-	lines := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+	return strings.TrimRight(rendered, "\n")
+}
 
-	// Calculate available height for body
-	// Header (3 lines) + Metadata (~7 lines) + Separators (2) + Footer (2) = ~14 lines
-	availableHeight := m.height - 14
+// applyScrolling applies scrolling to the entire content
+func (m *IssueDetailView) applyScrolling(content string) string {
+	lines := strings.Split(content, "\n")
+
+	// Calculate available height
+	// Footer (1 line) + margin = ~2 lines
+	availableHeight := m.height - 2
 	if availableHeight < 5 {
 		availableHeight = 5
 	}
 
+	// If content fits in the screen, no scrolling needed
+	if len(lines) <= availableHeight {
+		return content
+	}
+
 	// Apply scroll offset
 	startLine := m.scrollOffset
-	if startLine > len(lines) {
-		startLine = len(lines)
+	if startLine < 0 {
+		startLine = 0
+		m.scrollOffset = 0
+	}
+
+	maxOffset := len(lines) - availableHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+
+	if startLine > maxOffset {
+		startLine = maxOffset
+		m.scrollOffset = maxOffset
 	}
 
 	endLine := startLine + availableHeight
 	if endLine > len(lines) {
 		endLine = len(lines)
-		// Adjust scroll offset to not go beyond content
-		if len(lines) > availableHeight {
-			m.scrollOffset = len(lines) - availableHeight
-			startLine = m.scrollOffset
-		} else {
-			m.scrollOffset = 0
-			startLine = 0
-		}
 	}
 
 	visibleLines := lines[startLine:endLine]
 
-	// Add scroll indicator if needed
-	scrollInfo := ""
-	if len(lines) > availableHeight {
-		scrollInfo = fmt.Sprintf("\n%s",
-			styles.MutedStyle.Render(fmt.Sprintf("Line %d-%d of %d", startLine+1, endLine, len(lines))))
-	}
+	// Add scroll indicator
+	scrollInfo := styles.MutedStyle.Render(fmt.Sprintf("[%d-%d/%d]", startLine+1, endLine, len(lines)))
 
-	return strings.Join(visibleLines, "\n") + scrollInfo
+	return strings.Join(visibleLines, "\n") + "\n" + scrollInfo
 }
 
 // renderFooter renders the footer with help
@@ -310,4 +381,47 @@ func (m *IssueDetailView) renderError() string {
 // formatTime formats a time to a readable string
 func formatTime(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
+}
+
+// renderComments renders the comments section
+func (m *IssueDetailView) renderComments() string {
+	var s strings.Builder
+
+	// Comments header
+	commentsHeader := styles.BoldStyle.Render(fmt.Sprintf("Comments (%d)", len(m.comments)))
+	s.WriteString(commentsHeader)
+	s.WriteString("\n")
+	s.WriteString(styles.Separator(m.width - 4))
+	s.WriteString("\n\n")
+
+	// Render each comment
+	for i, comment := range m.comments {
+		if i > 0 {
+			s.WriteString("\n")
+			s.WriteString(styles.MutedStyle.Render(strings.Repeat("─", m.width-4)))
+			s.WriteString("\n\n")
+		}
+
+		// Comment author and time
+		authorStyle := styles.BoldStyle
+		author := authorStyle.Render(comment.User.Login)
+		timeStr := styles.MutedStyle.Render(formatTime(comment.CreatedAt))
+
+		s.WriteString(fmt.Sprintf("%s commented %s", author, timeStr))
+		s.WriteString("\n\n")
+
+		// Comment body (with markdown rendering)
+		if m.renderer != nil && comment.Body != "" {
+			rendered, err := m.renderer.Render(comment.Body)
+			if err == nil {
+				s.WriteString(rendered)
+			} else {
+				s.WriteString(comment.Body)
+			}
+		} else {
+			s.WriteString(comment.Body)
+		}
+	}
+
+	return s.String()
 }

@@ -40,3 +40,8 @@ func (uc *FetchIssuesUseCase) Execute(ctx context.Context, owner, repo string, o
 
 	return issues, nil
 }
+
+// GetRepository returns the underlying issue repository
+func (uc *FetchIssuesUseCase) GetRepository() repository.IssueRepository {
+	return uc.repo
+}

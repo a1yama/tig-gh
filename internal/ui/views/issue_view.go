@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a1yama/tig-gh/internal/application/usecase"
 	"github.com/a1yama/tig-gh/internal/domain/models"
+	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,9 +25,15 @@ type issuesLoadedMsg struct {
 // forceRenderMsg forces Bubble Tea to re-render
 type forceRenderMsg struct{}
 
+// FetchIssuesUseCase defines the interface for fetching issues
+type FetchIssuesUseCase interface {
+	Execute(ctx context.Context, owner, repo string, opts *models.IssueOptions) ([]*models.Issue, error)
+	GetRepository() repository.IssueRepository
+}
+
 // IssueView is the model for the issue list view
 type IssueView struct {
-	fetchIssuesUseCase usecase.FetchIssuesUseCase
+	fetchIssuesUseCase FetchIssuesUseCase
 	owner              string
 	repo               string
 	issues             []*models.Issue
@@ -61,7 +67,7 @@ func NewIssueView() *IssueView {
 }
 
 // NewIssueViewWithUseCase creates a new issue view with UseCase
-func NewIssueViewWithUseCase(fetchIssuesUseCase usecase.FetchIssuesUseCase, owner, repo string) *IssueView {
+func NewIssueViewWithUseCase(fetchIssuesUseCase FetchIssuesUseCase, owner, repo string) *IssueView {
 	return &IssueView{
 		fetchIssuesUseCase: fetchIssuesUseCase,
 		owner:              owner,
@@ -89,6 +95,32 @@ func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if debugFile != nil {
 		defer debugFile.Close()
+	}
+
+	// If showing detail view and not a window size message, delegate to detail view first
+	if m.showingDetail && m.detailView != nil {
+		// Let detail view handle all messages except backMsg
+		if _, isBackMsg := msg.(backMsg); isBackMsg {
+			m.showingDetail = false
+			m.detailView = nil
+			return m, nil
+		}
+
+		// Delegate to detail view
+		updatedModel, cmd := m.detailView.Update(msg)
+		m.detailView = updatedModel.(*IssueDetailView)
+
+		// Check if it's a KeyMsg for back navigation
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			keyStr := keyMsg.String()
+			if keyStr == "q" || keyStr == "esc" {
+				m.showingDetail = false
+				m.detailView = nil
+				return m, nil
+			}
+		}
+
+		return m, cmd
 	}
 
 	switch msg := msg.(type) {
@@ -119,22 +151,6 @@ func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// If showing detail view, check for back navigation first
-		if m.showingDetail && m.detailView != nil {
-			if debugFile != nil {
-				fmt.Fprintf(debugFile, "  -> In detail view\n")
-			}
-			if keyStr == "q" || keyStr == "esc" {
-				m.showingDetail = false
-				m.detailView = nil
-				return m, nil
-			}
-			// Otherwise delegate to detail view
-			var cmd tea.Cmd
-			updatedModel, cmd := m.detailView.Update(msg)
-			m.detailView = updatedModel.(*IssueDetailView)
-			return m, cmd
-		}
 		// Handle key press in list view
 		if debugFile != nil {
 			fmt.Fprintf(debugFile, "  -> Calling handleKeyPress\n")
@@ -211,7 +227,11 @@ func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// View issue detail
 		if len(m.issues) > 0 && m.cursor < len(m.issues) {
 			selectedIssue := m.issues[m.cursor]
-			m.detailView = NewIssueDetailView(selectedIssue)
+			var issueRepo repository.IssueRepository
+			if m.fetchIssuesUseCase != nil {
+				issueRepo = m.fetchIssuesUseCase.GetRepository()
+			}
+			m.detailView = NewIssueDetailView(selectedIssue, m.owner, m.repo, issueRepo)
 			m.detailView.width = m.width
 			m.detailView.height = m.height
 			m.showingDetail = true

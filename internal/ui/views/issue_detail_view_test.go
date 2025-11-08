@@ -11,7 +11,7 @@ import (
 // TestIssueDetailView_Init tests the initialization of the detail view
 func TestIssueDetailView_Init(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 
 	if view == nil {
 		t.Fatal("NewIssueDetailView returned nil")
@@ -83,7 +83,7 @@ func TestIssueDetailView_Update_KeyboardInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			issue := createTestIssue()
-			view := NewIssueDetailView(issue)
+			view := NewIssueDetailView(issue, "owner", "repo", nil)
 
 			if tt.shouldScroll {
 				view.scrollOffset = tt.scrollBefore
@@ -123,7 +123,7 @@ func TestIssueDetailView_Update_KeyboardInput(t *testing.T) {
 // TestIssueDetailView_Update_ScrollBounds tests scroll boundary conditions
 func TestIssueDetailView_Update_ScrollBounds(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 	view.scrollOffset = 0
 
 	// Try to scroll up from the top
@@ -139,7 +139,7 @@ func TestIssueDetailView_Update_ScrollBounds(t *testing.T) {
 // TestIssueDetailView_Update_WindowSize tests window size message handling
 func TestIssueDetailView_Update_WindowSize(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 
 	msg := tea.WindowSizeMsg{Width: 100, Height: 50}
 	model, _ := view.Update(msg)
@@ -157,7 +157,7 @@ func TestIssueDetailView_Update_WindowSize(t *testing.T) {
 // TestIssueDetailView_Update_LoadingState tests loading state handling
 func TestIssueDetailView_Update_LoadingState(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 	view.loading = true
 	view.width = 80
 	view.height = 24
@@ -177,7 +177,7 @@ func TestIssueDetailView_Update_LoadingState(t *testing.T) {
 // TestIssueDetailView_Update_ErrorState tests error state handling
 func TestIssueDetailView_Update_ErrorState(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 	view.width = 80
 	view.height = 24
 
@@ -198,7 +198,7 @@ func TestIssueDetailView_Update_ErrorState(t *testing.T) {
 // TestIssueDetailView_View tests the rendering
 func TestIssueDetailView_View(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 	view.width = 100
 	view.height = 50
 
@@ -223,7 +223,7 @@ func TestIssueDetailView_View(t *testing.T) {
 // TestIssueDetailView_View_WithoutSize tests rendering without size set
 func TestIssueDetailView_View_WithoutSize(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 
 	output := view.View()
 
@@ -236,7 +236,7 @@ func TestIssueDetailView_View_WithoutSize(t *testing.T) {
 // TestIssueDetailView_OpenInBrowser tests the browser open functionality
 func TestIssueDetailView_OpenInBrowser(t *testing.T) {
 	issue := createTestIssue()
-	view := NewIssueDetailView(issue)
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}
 	_, cmd := view.Update(msg)

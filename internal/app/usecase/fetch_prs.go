@@ -40,3 +40,8 @@ func (uc *FetchPRsUseCase) Execute(ctx context.Context, owner, repo string, opts
 
 	return prs, nil
 }
+
+// GetRepository returns the underlying PR repository
+func (uc *FetchPRsUseCase) GetRepository() repository.PullRequestRepository {
+	return uc.repo
+}
