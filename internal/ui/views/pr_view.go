@@ -54,7 +54,7 @@ func NewPRView() *PRView {
 		loading:         false,
 		statusBar:       components.NewStatusBar(),
 		showHelp:        false,
-		filterState:     models.PRStateAll,
+		filterState:     models.PRStateOpen,
 	}
 }
 
@@ -70,7 +70,7 @@ func NewPRViewWithUseCase(fetchPRsUseCase FetchPRsUseCase, owner, repo string) *
 		loading:         true, // Start in loading state
 		statusBar:       components.NewStatusBar(),
 		showHelp:        false,
-		filterState:     models.PRStateAll,
+		filterState:     models.PRStateOpen,
 	}
 }
 
@@ -434,9 +434,9 @@ func (m *PRView) renderPRLine(pr *models.PullRequest, index int) string {
 	mergeableStatus := ""
 	if pr.State == models.PRStateOpen && !pr.Draft {
 		if pr.Mergeable {
-			mergeableStatus = " " + styles.SuccessStyle.Render("✓")
+			mergeableStatus = " " + styles.PRApprovedStyle.Render("✓")
 		} else {
-			mergeableStatus = " " + styles.ErrorStyle.Render("✗")
+			mergeableStatus = " " + styles.PRChangesRequestedStyle.Render("✗")
 		}
 	}
 
