@@ -31,4 +31,7 @@ type IssueRepository interface {
 
 	// Unlock unlocks an issue
 	Unlock(ctx context.Context, owner, repo string, number int) error
+
+	// ListComments retrieves comments for an issue
+	ListComments(ctx context.Context, owner, repo string, number int, opts *models.CommentOptions) ([]*models.Comment, error)
 }

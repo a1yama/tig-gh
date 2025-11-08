@@ -37,4 +37,7 @@ type PullRequestRepository interface {
 
 	// ListReviews retrieves reviews for a pull request
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*models.Review, error)
+
+	// ListComments retrieves comments for a pull request
+	ListComments(ctx context.Context, owner, repo string, number int, opts *models.CommentOptions) ([]*models.Comment, error)
 }

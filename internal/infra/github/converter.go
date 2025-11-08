@@ -551,3 +551,24 @@ func convertFromMergeOptions(opts *models.MergeOptions) *github.PullRequestOptio
 
 	return ghOpts
 }
+
+// convertToComment converts a GitHub issue comment to a domain comment
+func convertToComment(ghComment *github.IssueComment) *models.Comment {
+	if ghComment == nil {
+		return nil
+	}
+
+	comment := &models.Comment{
+		ID:        ghComment.GetID(),
+		Body:      ghComment.GetBody(),
+		CreatedAt: ghComment.GetCreatedAt().Time,
+		UpdatedAt: ghComment.GetUpdatedAt().Time,
+		HTMLURL:   ghComment.GetHTMLURL(),
+	}
+
+	if ghComment.User != nil {
+		comment.User = convertToUser(ghComment.User)
+	}
+
+	return comment
+}

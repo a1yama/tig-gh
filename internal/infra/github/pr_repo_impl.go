@@ -160,3 +160,43 @@ func (r *PullRequestRepositoryImpl) ListReviews(ctx context.Context, owner, repo
 
 	return convertToReviews(ghReviews), nil
 }
+
+// ListComments retrieves comments for a pull request
+func (r *PullRequestRepositoryImpl) ListComments(ctx context.Context, owner, repo string, number int, opts *models.CommentOptions) ([]*models.Comment, error) {
+	// デフォルトオプション
+	ghOpts := &github.IssueListCommentsOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 100, // デフォルトは最大値
+		},
+	}
+
+	if opts != nil {
+		if opts.Sort != "" {
+			ghOpts.Sort = &opts.Sort
+		}
+		if opts.Direction != "" {
+			ghOpts.Direction = &opts.Direction
+		}
+		if opts.PerPage > 0 {
+			ghOpts.ListOptions.PerPage = opts.PerPage
+		}
+		if opts.Page > 0 {
+			ghOpts.ListOptions.Page = opts.Page
+		}
+	}
+
+	// Note: PRのコメントもIssues.ListCommentsを使用する（GitHub APIの仕様）
+	comments, resp, err := r.client.client.Issues.ListComments(ctx, owner, repo, number, ghOpts)
+	if err != nil {
+		return nil, handleGitHubError(err, resp)
+	}
+
+	result := make([]*models.Comment, 0, len(comments))
+	for _, comment := range comments {
+		if c := convertToComment(comment); c != nil {
+			result = append(result, c)
+		}
+	}
+
+	return result, nil
+}

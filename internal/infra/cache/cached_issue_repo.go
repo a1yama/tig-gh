@@ -154,3 +154,27 @@ func (r *CachedIssueRepository) Unlock(ctx context.Context, owner, repo string, 
 
 	return nil
 }
+
+// ListComments retrieves comments for an issue with caching
+func (r *CachedIssueRepository) ListComments(ctx context.Context, owner, repo string, number int, opts *models.CommentOptions) ([]*models.Comment, error) {
+	// Generate cache key
+	key := r.cache.GenerateKey("issues:comments", owner, repo, number, opts)
+
+	// Try to get from cache
+	if cached, ok := r.cache.GetWithContext(ctx, key); ok {
+		if comments, ok := cached.([]*models.Comment); ok {
+			return comments, nil
+		}
+	}
+
+	// Cache miss - fetch from underlying repository
+	comments, err := r.repo.ListComments(ctx, owner, repo, number, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache
+	_ = r.cache.SetWithContext(ctx, key, comments, 0)
+
+	return comments, nil
+}

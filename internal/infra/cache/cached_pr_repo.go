@@ -194,3 +194,27 @@ func (r *CachedPullRequestRepository) ListReviews(ctx context.Context, owner, re
 
 	return reviews, nil
 }
+
+// ListComments retrieves comments for a pull request with caching
+func (r *CachedPullRequestRepository) ListComments(ctx context.Context, owner, repo string, number int, opts *models.CommentOptions) ([]*models.Comment, error) {
+	// Generate cache key
+	key := r.cache.GenerateKey("prs:comments", owner, repo, number, opts)
+
+	// Try to get from cache
+	if cached, ok := r.cache.GetWithContext(ctx, key); ok {
+		if comments, ok := cached.([]*models.Comment); ok {
+			return comments, nil
+		}
+	}
+
+	// Cache miss - fetch from underlying repository
+	comments, err := r.repo.ListComments(ctx, owner, repo, number, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache
+	_ = r.cache.SetWithContext(ctx, key, comments, 0)
+
+	return comments, nil
+}
