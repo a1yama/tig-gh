@@ -156,6 +156,42 @@ var (
 	// 作成者
 	AuthorStyle = lipgloss.NewStyle().
 			Foreground(ColorSecondary)
+
+	// Pull Request review status styles
+	PRApprovedStyle = lipgloss.NewStyle().
+			Foreground(ColorSuccess).
+			Bold(true)
+
+	PRChangesRequestedStyle = lipgloss.NewStyle().
+				Foreground(ColorError).
+				Bold(true)
+
+	PRPendingStyle = lipgloss.NewStyle().
+			Foreground(ColorWarning).
+			Bold(true)
+
+	// Pull Request CI status styles
+	CIPassStyle = lipgloss.NewStyle().
+			Foreground(ColorSuccess).
+			Bold(true)
+
+	CIFailStyle = lipgloss.NewStyle().
+			Foreground(ColorError).
+			Bold(true)
+
+	CIRunningStyle = lipgloss.NewStyle().
+			Foreground(ColorInfo).
+			Bold(true)
+
+	// Diff styles
+	AddedLineStyle = lipgloss.NewStyle().
+			Foreground(ColorSuccess)
+
+	DeletedLineStyle = lipgloss.NewStyle().
+				Foreground(ColorError)
+
+	ContextLineStyle = lipgloss.NewStyle().
+				Foreground(ColorForeground)
 )
 
 // GetStateStyle returns the style for the given state
