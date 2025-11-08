@@ -54,7 +54,7 @@ func NewPRView() *PRView {
 		loading:         false,
 		statusBar:       components.NewStatusBar(),
 		showHelp:        false,
-		filterState:     models.PRStateOpen,
+		filterState:     models.PRStateAll,
 	}
 }
 
@@ -70,7 +70,7 @@ func NewPRViewWithUseCase(fetchPRsUseCase FetchPRsUseCase, owner, repo string) *
 		loading:         true, // Start in loading state
 		statusBar:       components.NewStatusBar(),
 		showHelp:        false,
-		filterState:     models.PRStateOpen,
+		filterState:     models.PRStateAll,
 	}
 }
 
@@ -170,6 +170,10 @@ func (m *PRView) fetchPRs() tea.Cmd {
 
 // handleKeyPress handles keyboard input
 func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyStr := msg.String()
+	// Debug: log key press
+	// fmt.Fprintf(os.Stderr, "[PRView.handleKeyPress] key=%s cursor=%d prs=%d\n", keyStr, m.cursor, len(m.prs))
+
 	// Handle Enter key using Type check for reliability
 	if msg.Type == tea.KeyEnter {
 		// View PR detail
@@ -185,7 +189,7 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
+	switch keyStr {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 
@@ -223,15 +227,19 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "j", "down":
+		// fmt.Fprintf(os.Stderr, "[PRView] j/down pressed, cursor before=%d\n", m.cursor)
 		if m.cursor < len(m.prs)-1 {
 			m.cursor++
 		}
+		// fmt.Fprintf(os.Stderr, "[PRView] cursor after=%d\n", m.cursor)
 		return m, nil
 
 	case "k", "up":
+		// fmt.Fprintf(os.Stderr, "[PRView] k/up pressed, cursor before=%d\n", m.cursor)
 		if m.cursor > 0 {
 			m.cursor--
 		}
+		// fmt.Fprintf(os.Stderr, "[PRView] cursor after=%d\n", m.cursor)
 		return m, nil
 
 	case "g":
@@ -261,6 +269,10 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // View renders the PR view
 func (m *PRView) View() string {
+	// Debug: log view state
+	// fmt.Fprintf(os.Stderr, "[PRView.View] width=%d height=%d loading=%v err=%v prs=%d cursor=%d\n",
+	//	m.width, m.height, m.loading, m.err != nil, len(m.prs), m.cursor)
+
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
 	}
@@ -316,6 +328,11 @@ func (m *PRView) renderHeader() string {
 // renderPRList renders the list of pull requests
 func (m *PRView) renderPRList() string {
 	var s strings.Builder
+
+	if len(m.prs) == 0 {
+		emptyMsg := fmt.Sprintf("No pull requests (%s)", m.filterState)
+		return styles.MutedStyle.Render(emptyMsg)
+	}
 
 	// Calculate available height for list (total - header - status bar - margins)
 	availableHeight := m.height - 4
@@ -389,12 +406,22 @@ func (m *PRView) renderPRLine(pr *models.PullRequest, index int) string {
 	// PR number
 	number := styles.IssueNumberStyle.Render(fmt.Sprintf("#%-5d", pr.Number))
 
-	// Title
+	// Title (with max width to prevent wrapping)
 	titleStyle := styles.IssueTitleStyle
 	if m.cursor == index {
 		titleStyle = styles.SelectedStyle
 	}
-	title := titleStyle.Render(pr.Title)
+	// Calculate max width for title to prevent layout breaking
+	// Reserve space for: cursor(3) + badge(10) + number(8) + spaces + metadata(~30)
+	maxTitleWidth := m.width - 60
+	if maxTitleWidth < 20 {
+		maxTitleWidth = 20
+	}
+	titleText := pr.Title
+	if len(titleText) > maxTitleWidth {
+		titleText = titleText[:maxTitleWidth-3] + "..."
+	}
+	title := titleStyle.Render(titleText)
 
 	// Review status
 	approved, changesRequested, pending := m.countReviews(pr)

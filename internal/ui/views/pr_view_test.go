@@ -434,6 +434,19 @@ func TestPRView_View_States(t *testing.T) {
 	}
 }
 
+func TestPRView_RenderPRList_Empty(t *testing.T) {
+	view := NewPRView()
+	view.width = 80
+	view.height = 24
+	view.prs = []*models.PullRequest{}
+
+	output := view.renderPRList()
+
+	if !strings.Contains(output, "No pull requests") {
+		t.Fatalf("expected empty-state message, got %q", output)
+	}
+}
+
 func TestPRView_Navigation(t *testing.T) {
 	mockUseCase := &mockFetchPRsUseCase{
 		executeFunc: func(ctx context.Context, owner, repo string, opts *models.PROptions) ([]*models.PullRequest, error) {
@@ -893,13 +906,23 @@ func TestPRView_FilterCycle(t *testing.T) {
 	view := NewPRViewWithUseCase(mockUseCase, "testowner", "testrepo")
 	view.loading = false
 
-	// Start with open
-	if view.filterState != models.PRStateOpen {
-		t.Errorf("expected initial filter state to be open, got %s", view.filterState)
+	// Start with all
+	if view.filterState != models.PRStateAll {
+		t.Errorf("expected initial filter state to be all, got %s", view.filterState)
 	}
 
-	// Cycle to closed
+	// Cycle to open
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}}
+	view.Update(msg)
+	if view.filterState != models.PRStateOpen {
+		t.Errorf("expected filter state to be open, got %s", view.filterState)
+	}
+
+	// Wait for loading to complete
+	view.Update(prsLoadedMsg{prs: []*models.PullRequest{}, err: nil})
+	view.loading = false
+
+	// Cycle to closed
 	view.Update(msg)
 	if view.filterState != models.PRStateClosed {
 		t.Errorf("expected filter state to be closed, got %s", view.filterState)
@@ -909,20 +932,10 @@ func TestPRView_FilterCycle(t *testing.T) {
 	view.Update(prsLoadedMsg{prs: []*models.PullRequest{}, err: nil})
 	view.loading = false
 
-	// Cycle to all
+	// Cycle back to all
 	view.Update(msg)
 	if view.filterState != models.PRStateAll {
 		t.Errorf("expected filter state to be all, got %s", view.filterState)
-	}
-
-	// Wait for loading to complete
-	view.Update(prsLoadedMsg{prs: []*models.PullRequest{}, err: nil})
-	view.loading = false
-
-	// Cycle back to open
-	view.Update(msg)
-	if view.filterState != models.PRStateOpen {
-		t.Errorf("expected filter state to be open, got %s", view.filterState)
 	}
 }
 
