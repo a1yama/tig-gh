@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -33,17 +34,11 @@ type IssueDetailView struct {
 
 // NewIssueDetailView creates a new issue detail view
 func NewIssueDetailView(issue *models.Issue) *IssueDetailView {
-	// Create a glamour renderer for markdown
-	renderer, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(80),
-	)
-
 	return &IssueDetailView{
 		issue:        issue,
 		scrollOffset: 0,
 		loading:      false,
-		renderer:     renderer,
+		renderer:     newMarkdownRenderer(80),
 	}
 }
 
@@ -113,6 +108,12 @@ func (m *IssueDetailView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // View renders the issue detail view
 func (m *IssueDetailView) View() string {
+	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if debugFile != nil {
+		fmt.Fprintf(debugFile, "[IssueDetailView.View] width=%d height=%d\n", m.width, m.height)
+		debugFile.Close()
+	}
+
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
 	}

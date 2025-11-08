@@ -1,7 +1,10 @@
 package ui
 
 import (
-	"github.com/a1yama/tig-gh/internal/application/usecase"
+	"fmt"
+	"os"
+
+	"github.com/a1yama/tig-gh/internal/app/usecase"
 	"github.com/a1yama/tig-gh/internal/ui/views"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -17,46 +20,61 @@ const (
 
 // App is the main application model
 type App struct {
-	currentView        ViewType
-	issueView          tea.Model
-	fetchIssuesUseCase usecase.FetchIssuesUseCase
-	owner              string
-	repo               string
-	width              int
-	height             int
-	ready              bool
+	currentView         ViewType
+	issueView           tea.Model
+	prView              tea.Model
+	commitView          tea.Model
+	fetchIssuesUseCase  *usecase.FetchIssuesUseCase
+	fetchPRsUseCase     *usecase.FetchPRsUseCase
+	fetchCommitsUseCase *usecase.FetchCommitsUseCase
+	owner               string
+	repo                string
+	width               int
+	height              int
+	ready               bool
+	issueViewInited     bool
+	prViewInited        bool
+	commitViewInited    bool
 }
 
 // NewApp creates a new application instance (for backward compatibility)
 func NewApp() *App {
 	return &App{
-		currentView:        IssueListView,
-		issueView:          views.NewIssueView(),
-		fetchIssuesUseCase: nil,
-		owner:              "",
-		repo:               "",
-		ready:              false,
+		currentView: IssueListView,
+		issueView:   views.NewIssueView(),
+		prView:      views.NewPRView(),
+		commitView:  views.NewCommitView(),
+		owner:       "",
+		repo:        "",
+		ready:       false,
 	}
 }
 
-// NewAppWithUseCase creates a new application instance with UseCase
-func NewAppWithUseCase(fetchIssuesUseCase usecase.FetchIssuesUseCase, owner, repo string) *App {
+// NewAppWithUseCases creates a new application instance with all UseCases
+func NewAppWithUseCases(
+	fetchIssuesUseCase *usecase.FetchIssuesUseCase,
+	fetchPRsUseCase *usecase.FetchPRsUseCase,
+	fetchCommitsUseCase *usecase.FetchCommitsUseCase,
+	owner, repo string,
+) *App {
 	return &App{
-		currentView:        IssueListView,
-		issueView:          views.NewIssueViewWithUseCase(fetchIssuesUseCase, owner, repo),
-		fetchIssuesUseCase: fetchIssuesUseCase,
-		owner:              owner,
-		repo:               repo,
-		ready:              false,
+		currentView:         IssueListView,
+		issueView:           views.NewIssueViewWithUseCase(fetchIssuesUseCase, owner, repo),
+		prView:              views.NewPRViewWithUseCase(fetchPRsUseCase, owner, repo),
+		commitView:          views.NewCommitViewWithUseCase(fetchCommitsUseCase, owner, repo),
+		fetchIssuesUseCase:  fetchIssuesUseCase,
+		fetchPRsUseCase:     fetchPRsUseCase,
+		fetchCommitsUseCase: fetchCommitsUseCase,
+		owner:               owner,
+		repo:                repo,
+		ready:               false,
 	}
 }
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(
-		tea.EnterAltScreen,
-		a.issueView.Init(),
-	)
+	a.issueViewInited = true
+	return a.issueView.Init()
 }
 
 // Update handles messages and updates the application state
@@ -76,16 +94,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "1":
 			// Switch to issue view
 			a.currentView = IssueListView
+			if !a.issueViewInited {
+				a.issueViewInited = true
+				return a, a.issueView.Init()
+			}
 			return a, nil
 
 		case "2":
-			// Switch to PR view (not implemented yet)
+			// Switch to PR view
 			a.currentView = PullRequestListView
+			if !a.prViewInited {
+				a.prViewInited = true
+				return a, a.prView.Init()
+			}
 			return a, nil
 
 		case "3":
-			// Switch to commit view (not implemented yet)
+			// Switch to commit view
 			a.currentView = CommitListView
+			if !a.commitViewInited {
+				a.commitViewInited = true
+				return a, a.commitView.Init()
+			}
 			return a, nil
 
 		default:
@@ -100,6 +130,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Propagate size to all views
 		a.issueView, cmd = a.issueView.Update(msg)
+		cmds = append(cmds, cmd)
+
+		a.prView, cmd = a.prView.Update(msg)
+		cmds = append(cmds, cmd)
+
+		a.commitView, cmd = a.commitView.Update(msg)
 		cmds = append(cmds, cmd)
 
 		return a, tea.Batch(cmds...)
@@ -120,12 +156,12 @@ func (a *App) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 
 	case PullRequestListView:
-		// Not implemented yet
-		return a, nil
+		a.prView, cmd = a.prView.Update(msg)
+		return a, cmd
 
 	case CommitListView:
-		// Not implemented yet
-		return a, nil
+		a.commitView, cmd = a.commitView.Update(msg)
+		return a, cmd
 
 	default:
 		return a, nil
@@ -134,19 +170,31 @@ func (a *App) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the application
 func (a *App) View() string {
+	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if debugFile != nil {
+		fmt.Fprintf(debugFile, "[App.View] currentView=%d ready=%v\n", a.currentView, a.ready)
+		debugFile.Close()
+	}
+
 	if !a.ready {
 		return "Initializing tig-gh..."
 	}
 
 	switch a.currentView {
 	case IssueListView:
-		return a.issueView.View()
+		view := a.issueView.View()
+		debugFile2, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if debugFile2 != nil {
+			fmt.Fprintf(debugFile2, "[App.View] Returning IssueView, len=%d\n", len(view))
+			debugFile2.Close()
+		}
+		return view
 
 	case PullRequestListView:
-		return "Pull Request View (Not Implemented)"
+		return a.prView.View()
 
 	case CommitListView:
-		return "Commit View (Not Implemented)"
+		return a.commitView.View()
 
 	default:
 		return "Unknown view"

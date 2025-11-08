@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -20,6 +21,9 @@ type issuesLoadedMsg struct {
 	err    error
 }
 
+// forceRenderMsg forces Bubble Tea to re-render
+type forceRenderMsg struct{}
+
 // IssueView is the model for the issue list view
 type IssueView struct {
 	fetchIssuesUseCase usecase.FetchIssuesUseCase
@@ -35,6 +39,8 @@ type IssueView struct {
 	statusBar          *components.StatusBar
 	showHelp           bool
 	filterState        models.IssueState
+	detailView         *IssueDetailView
+	showingDetail      bool
 }
 
 // NewIssueView creates a new issue view (for backward compatibility)
@@ -79,7 +85,61 @@ func (m *IssueView) Init() tea.Cmd {
 
 // Update handles messages
 func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if debugFile != nil {
+		defer debugFile.Close()
+	}
+
 	switch msg := msg.(type) {
+	case forceRenderMsg:
+		// No-op: just used to trigger a rerender
+		return m, nil
+
+	case backMsg:
+		// Return from detail view
+		m.showingDetail = false
+		m.detailView = nil
+		return m, nil
+
+	case tea.KeyMsg:
+		keyStr := msg.String()
+		if isTerminalResponse(keyStr) {
+			return m, nil
+		}
+		if debugFile != nil {
+			fmt.Fprintf(debugFile, "[Update] KeyMsg=%s Type=%d showingDetail=%v\n", keyStr, msg.Type, m.showingDetail)
+		}
+
+		// Ignore unknown/unhandled key types (like terminal responses)
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 0 {
+			if debugFile != nil {
+				fmt.Fprintf(debugFile, "  -> Ignoring empty runes key\n")
+			}
+			return m, nil
+		}
+
+		// If showing detail view, check for back navigation first
+		if m.showingDetail && m.detailView != nil {
+			if debugFile != nil {
+				fmt.Fprintf(debugFile, "  -> In detail view\n")
+			}
+			if keyStr == "q" || keyStr == "esc" {
+				m.showingDetail = false
+				m.detailView = nil
+				return m, nil
+			}
+			// Otherwise delegate to detail view
+			var cmd tea.Cmd
+			updatedModel, cmd := m.detailView.Update(msg)
+			m.detailView = updatedModel.(*IssueDetailView)
+			return m, cmd
+		}
+		// Handle key press in list view
+		if debugFile != nil {
+			fmt.Fprintf(debugFile, "  -> Calling handleKeyPress\n")
+		}
+		return m.handleKeyPress(msg)
+
 	case issuesLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -97,13 +157,13 @@ func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
-		return m.handleKeyPress(msg)
-
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.statusBar.SetSize(msg.Width, 1)
+		if m.detailView != nil {
+			m.detailView.Update(msg)
+		}
 		return m, nil
 	}
 
@@ -137,6 +197,34 @@ func (m *IssueView) fetchIssues() tea.Cmd {
 
 // handleKeyPress handles keyboard input
 func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if debugFile != nil {
+		defer debugFile.Close()
+	}
+
+	// Handle Enter key using Type check for reliability
+	if msg.Type == tea.KeyEnter {
+		if debugFile != nil {
+			fmt.Fprintf(debugFile, "[handleKeyPress] Enter detected! cursor=%d issues=%d\n", m.cursor, len(m.issues))
+		}
+		// View issue detail
+		if len(m.issues) > 0 && m.cursor < len(m.issues) {
+			selectedIssue := m.issues[m.cursor]
+			m.detailView = NewIssueDetailView(selectedIssue)
+			m.detailView.width = m.width
+			m.detailView.height = m.height
+			m.showingDetail = true
+			if debugFile != nil {
+				fmt.Fprintf(debugFile, "  -> Detail view created, showingDetail=%v\n", m.showingDetail)
+			}
+			return m, tea.Batch(
+				m.detailView.Init(),
+				func() tea.Msg { return forceRenderMsg{} },
+			)
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -198,7 +286,7 @@ func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "enter", " ":
+	case " ":
 		// Toggle selection (for future use)
 		if _, ok := m.selected[m.cursor]; ok {
 			delete(m.selected, m.cursor)
@@ -213,8 +301,19 @@ func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // View renders the issue view
 func (m *IssueView) View() string {
+	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if debugFile != nil {
+		fmt.Fprintf(debugFile, "[View] showingDetail=%v detailView=%v\n", m.showingDetail, m.detailView != nil)
+		debugFile.Close()
+	}
+
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
+	}
+
+	// If showing detail view, render it
+	if m.showingDetail && m.detailView != nil {
+		return m.detailView.View()
 	}
 
 	var s strings.Builder

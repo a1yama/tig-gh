@@ -36,6 +36,8 @@ type CommitView struct {
 	height              int
 	statusBar           *components.StatusBar
 	showHelp            bool
+	detailView          *CommitDetailView
+	showingDetail       bool
 }
 
 // NewCommitView creates a new commit view
@@ -77,6 +79,31 @@ func (m *CommitView) Init() tea.Cmd {
 // Update handles messages
 func (m *CommitView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case backMsg:
+		// Return from detail view
+		m.showingDetail = false
+		m.detailView = nil
+		return m, nil
+
+	case tea.KeyMsg:
+		keyStr := msg.String()
+
+		// If showing detail view, check for back navigation first
+		if m.showingDetail && m.detailView != nil {
+			if keyStr == "q" || keyStr == "esc" {
+				m.showingDetail = false
+				m.detailView = nil
+				return m, nil
+			}
+			// Otherwise delegate to detail view
+			var cmd tea.Cmd
+			updatedModel, cmd := m.detailView.Update(msg)
+			m.detailView = updatedModel.(*CommitDetailView)
+			return m, cmd
+		}
+		// Handle key press in list view
+		return m.handleKeyPress(msg)
+
 	case commitsLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -94,13 +121,13 @@ func (m *CommitView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
-		return m.handleKeyPress(msg)
-
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.statusBar.SetSize(msg.Width, 1)
+		if m.detailView != nil {
+			m.detailView.Update(msg)
+		}
 		return m, nil
 	}
 
@@ -131,6 +158,21 @@ func (m *CommitView) fetchCommits() tea.Cmd {
 
 // handleKeyPress handles keyboard input
 func (m *CommitView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle Enter key using Type check for reliability
+	if msg.Type == tea.KeyEnter {
+		// View commit detail
+		if len(m.commits) > 0 && m.cursor < len(m.commits) {
+			selectedCommit := m.commits[m.cursor]
+			m.detailView = NewCommitDetailView(selectedCommit)
+			m.detailView.width = m.width
+			m.detailView.height = m.height
+			m.showingDetail = true
+			// Return detail view's Init command to trigger immediate update
+			return m, m.detailView.Init()
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -172,10 +214,6 @@ func (m *CommitView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "enter":
-		// View commit detail (to be implemented)
-		return m, nil
-
 	case "d":
 		// View diff (to be implemented)
 		return m, nil
@@ -192,6 +230,11 @@ func (m *CommitView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *CommitView) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
+	}
+
+	// If showing detail view, render it
+	if m.showingDetail && m.detailView != nil {
+		return m.detailView.View()
 	}
 
 	var s strings.Builder

@@ -38,6 +38,8 @@ type PRView struct {
 	statusBar       *components.StatusBar
 	showHelp        bool
 	filterState     models.PRState
+	detailView      *PRDetailView
+	showingDetail   bool
 }
 
 // NewPRView creates a new PR view (for backward compatibility)
@@ -83,6 +85,34 @@ func (m *PRView) Init() tea.Cmd {
 // Update handles messages
 func (m *PRView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case backMsg:
+		// Return from detail view
+		m.showingDetail = false
+		m.detailView = nil
+		return m, nil
+
+	case tea.KeyMsg:
+		keyStr := msg.String()
+		if isTerminalResponse(keyStr) {
+			return m, nil
+		}
+
+		// If showing detail view, check for back navigation first
+		if m.showingDetail && m.detailView != nil {
+			if keyStr == "q" || keyStr == "esc" {
+				m.showingDetail = false
+				m.detailView = nil
+				return m, nil
+			}
+			// Otherwise delegate to detail view
+			var cmd tea.Cmd
+			updatedModel, cmd := m.detailView.Update(msg)
+			m.detailView = updatedModel.(*PRDetailView)
+			return m, cmd
+		}
+		// Handle key press in list view
+		return m.handleKeyPress(msg)
+
 	case prsLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -100,13 +130,13 @@ func (m *PRView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
-		return m.handleKeyPress(msg)
-
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.statusBar.SetSize(msg.Width, 1)
+		if m.detailView != nil {
+			m.detailView.Update(msg)
+		}
 		return m, nil
 	}
 
@@ -140,6 +170,21 @@ func (m *PRView) fetchPRs() tea.Cmd {
 
 // handleKeyPress handles keyboard input
 func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle Enter key using Type check for reliability
+	if msg.Type == tea.KeyEnter {
+		// View PR detail
+		if len(m.prs) > 0 && m.cursor < len(m.prs) {
+			selectedPR := m.prs[m.cursor]
+			m.detailView = NewPRDetailView(selectedPR)
+			m.detailView.width = m.width
+			m.detailView.height = m.height
+			m.showingDetail = true
+			// Return detail view's Init command to trigger immediate update
+			return m, m.detailView.Init()
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -201,10 +246,6 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "enter":
-		// View PR detail (to be implemented)
-		return m, nil
-
 	case "d":
 		// View diff (to be implemented)
 		return m, nil
@@ -222,6 +263,11 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *PRView) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
+	}
+
+	// If showing detail view, render it
+	if m.showingDetail && m.detailView != nil {
+		return m.detailView.View()
 	}
 
 	var s strings.Builder

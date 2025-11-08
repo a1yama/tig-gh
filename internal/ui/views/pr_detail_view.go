@@ -45,18 +45,12 @@ type PRDetailView struct {
 
 // NewPRDetailView creates a new PR detail view
 func NewPRDetailView(pr *models.PullRequest) *PRDetailView {
-	// Create a glamour renderer for markdown
-	renderer, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(80),
-	)
-
 	return &PRDetailView{
 		pr:           pr,
 		currentTab:   tabOverview,
 		scrollOffset: 0,
 		loading:      false,
-		renderer:     renderer,
+		renderer:     newMarkdownRenderer(80),
 	}
 }
 

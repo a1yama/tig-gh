@@ -39,8 +39,23 @@ type CommitDetailView struct {
 	scrollOffset             int
 }
 
-// NewCommitDetailView creates a new commit detail view
-func NewCommitDetailView() *CommitDetailView {
+// NewCommitDetailView creates a new commit detail view with a commit
+func NewCommitDetailView(commit *models.Commit) *CommitDetailView {
+	return &CommitDetailView{
+		fetchCommitDetailUseCase: nil,
+		owner:                    "",
+		repo:                     "",
+		sha:                      commit.SHA,
+		commit:                   commit,
+		loading:                  false,
+		statusBar:                components.NewStatusBar(),
+		showHelp:                 false,
+		scrollOffset:             0,
+	}
+}
+
+// NewCommitDetailViewEmpty creates a new empty commit detail view
+func NewCommitDetailViewEmpty() *CommitDetailView {
 	return &CommitDetailView{
 		fetchCommitDetailUseCase: nil,
 		owner:                    "",

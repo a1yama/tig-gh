@@ -475,3 +475,35 @@ func TestIssueView_Navigation(t *testing.T) {
 		})
 	}
 }
+
+func TestIssueView_ShowDetailOnEnter(t *testing.T) {
+	view := NewIssueViewWithUseCase(nil, "testowner", "testrepo")
+	view.loading = false
+	view.width = 80
+	view.height = 24
+	view.issues = []*models.Issue{
+		{
+			Number: 1,
+			Title:  "Test Title",
+			Body:   "Body",
+			State:  models.IssueStateOpen,
+			Author: models.User{Login: "alice"},
+		},
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	view.Update(msg)
+
+	if !view.showingDetail {
+		t.Fatal("expected showingDetail to be true after Enter")
+	}
+
+	if view.detailView == nil {
+		t.Fatal("expected detailView to be initialized")
+	}
+
+	output := view.View()
+	if !strings.Contains(output, "Test Title") {
+		t.Fatalf("detail view output missing issue title: %s", output)
+	}
+}
