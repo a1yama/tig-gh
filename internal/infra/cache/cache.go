@@ -1,13 +1,15 @@
 package cache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/repository"
 )
 
-// CacheConfig キャッシュの設定
+// CacheConfig キャッシュの設定（後方互換性のため残す）
+// Deprecated: 新しいコードではConfigを使用してください
 type CacheConfig struct {
 	// MemoryEnabled メモリキャッシュを有効にするか
 	MemoryEnabled bool
@@ -21,15 +23,44 @@ type CacheConfig struct {
 
 // Cache メモリキャッシュとファイルキャッシュを統合したキャッシュマネージャー
 type Cache struct {
-	memory repository.CacheService
-	file   repository.CacheService
-	config CacheConfig
+	memory       repository.CacheService
+	file         repository.CacheService
+	config       *Config
+	keyGenerator KeyGenerator
 }
 
 // NewCache 新しいCacheを作成
+// Deprecated: 新しいコードではNewCacheWithConfigを使用してください
 func NewCache(config CacheConfig) (repository.CacheService, error) {
+	// 少なくとも1つのキャッシュが有効になっている必要がある
+	if !config.MemoryEnabled && !config.FileEnabled {
+		return nil, fmt.Errorf("at least one cache type must be enabled")
+	}
+
+	// 古いCacheConfigを新しいConfigに変換
+	newConfig := &Config{
+		MemoryEnabled:   config.MemoryEnabled,
+		MemoryTTL:       5 * time.Minute, // デフォルト値
+		FileEnabled:     config.FileEnabled,
+		FileDir:         config.FileDir,
+		FileTTL:         24 * time.Hour, // デフォルト値
+		CleanupInterval: config.CleanupInterval,
+		Version:         "v1",
+	}
+
+	return NewCacheWithConfig(newConfig)
+}
+
+// NewCacheWithConfig 新しいConfigでCacheを作成
+func NewCacheWithConfig(config *Config) (repository.CacheService, error) {
+	// 設定の妥当性チェック
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid cache config: %w", err)
+	}
+
 	c := &Cache{
-		config: config,
+		config:       config,
+		keyGenerator: NewKeyGenerator(),
 	}
 
 	// メモリキャッシュの初期化
@@ -46,20 +77,11 @@ func NewCache(config CacheConfig) (repository.CacheService, error) {
 
 	// ファイルキャッシュの初期化
 	if config.FileEnabled {
-		if config.FileDir == "" {
-			return nil, fmt.Errorf("file cache directory is required when file cache is enabled")
-		}
-
 		var err error
 		c.file, err = NewFileCache(config.FileDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create file cache: %w", err)
 		}
-	}
-
-	// 少なくとも1つのキャッシュが有効になっている必要がある
-	if !config.MemoryEnabled && !config.FileEnabled {
-		return nil, fmt.Errorf("at least one cache type must be enabled")
 	}
 
 	return c, nil
@@ -79,9 +101,9 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 	if c.file != nil {
 		if value, ok := c.file.Get(key); ok {
 			// ファイルキャッシュから取得した場合、メモリキャッシュにも保存
-			if c.memory != nil {
-				// エラーは無視（メモリキャッシュへの保存失敗は致命的ではない）
-				_ = c.memory.Set(key, value, 0)
+			if c.memory != nil && c.config.MemoryEnabled {
+				// メモリキャッシュのデフォルトTTLを使用
+				_ = c.memory.Set(key, value, c.config.MemoryTTL)
 			}
 			return value, true
 		}
@@ -90,26 +112,92 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 	return nil, false
 }
 
+// GetWithContext コンテキストからオプションを読み取ってキーに対応する値を取得
+func (c *Cache) GetWithContext(ctx context.Context, key string) (interface{}, bool) {
+	opts := OptionsFromContext(ctx)
+
+	// SkipCacheが指定されている場合はキャッシュを使わない
+	if !opts.ShouldUseCache() {
+		return nil, false
+	}
+
+	return c.Get(key)
+}
+
 // Set キーと値、有効期限を設定
 // メモリキャッシュとファイルキャッシュの両方に保存
 func (c *Cache) Set(key string, value interface{}, ttl time.Duration) error {
 	var lastErr error
 
+	// TTLが0の場合はデフォルトTTLを使用
+	memoryTTL := ttl
+	if memoryTTL == 0 && c.config.MemoryEnabled {
+		memoryTTL = c.config.MemoryTTL
+	}
+
+	fileTTL := ttl
+	if fileTTL == 0 && c.config.FileEnabled {
+		fileTTL = c.config.FileTTL
+	}
+
 	// メモリキャッシュに保存
 	if c.memory != nil {
-		if err := c.memory.Set(key, value, ttl); err != nil {
+		if err := c.memory.Set(key, value, memoryTTL); err != nil {
 			lastErr = err
 		}
 	}
 
 	// ファイルキャッシュに保存
 	if c.file != nil {
-		if err := c.file.Set(key, value, ttl); err != nil {
+		if err := c.file.Set(key, value, fileTTL); err != nil {
 			lastErr = err
 		}
 	}
 
 	return lastErr
+}
+
+// SetWithContext コンテキストからオプションを読み取ってキーと値を設定
+func (c *Cache) SetWithContext(ctx context.Context, key string, value interface{}, defaultTTL time.Duration) error {
+	opts := OptionsFromContext(ctx)
+
+	// SkipCacheが指定されている場合は何もしない
+	if !opts.ShouldUseCache() {
+		return nil
+	}
+
+	// オプションからTTLを取得（未設定の場合はデフォルトを使用）
+	memoryTTL := opts.GetEffectiveTTL(c.config.MemoryTTL)
+	fileTTL := opts.GetEffectiveTTL(c.config.FileTTL)
+
+	// defaultTTLが指定されている場合はそれを使う
+	if defaultTTL > 0 {
+		memoryTTL = defaultTTL
+		fileTTL = defaultTTL
+	}
+
+	var lastErr error
+
+	// メモリキャッシュに保存
+	if c.memory != nil && c.config.MemoryEnabled {
+		if err := c.memory.Set(key, value, memoryTTL); err != nil {
+			lastErr = err
+		}
+	}
+
+	// ファイルキャッシュに保存
+	if c.file != nil && c.config.FileEnabled {
+		if err := c.file.Set(key, value, fileTTL); err != nil {
+			lastErr = err
+		}
+	}
+
+	return lastErr
+}
+
+// GenerateKey KeyGeneratorを使ってキーを生成
+func (c *Cache) GenerateKey(resource string, params ...interface{}) string {
+	return c.keyGenerator.GenerateKey(resource, params...)
 }
 
 // Delete 指定したキーの値を削除

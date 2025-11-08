@@ -124,7 +124,7 @@ func TestConfig_Validate_Errors(t *testing.T) {
 			name: "negative cleanup interval",
 			config: cache.DefaultConfig().
 				WithCleanupInterval(-1 * time.Minute),
-			expectedErr: "cleanup interval must be positive",
+			expectedErr: "cleanup interval must be non-negative",
 		},
 	}
 

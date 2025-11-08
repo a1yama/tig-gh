@@ -98,8 +98,9 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.CleanupInterval <= 0 {
-		return &ConfigError{Message: "cleanup interval must be positive"}
+	// CleanupInterval は 0 でも良い（無効化を意味する）
+	if c.CleanupInterval < 0 {
+		return &ConfigError{Message: "cleanup interval must be non-negative"}
 	}
 
 	return nil

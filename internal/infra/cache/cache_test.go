@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -294,4 +295,149 @@ func TestCache_Overwrite(t *testing.T) {
 	value, ok := cache.Get("overwrite-key")
 	require.True(t, ok)
 	assert.Equal(t, "new-value", value)
+}
+
+// 新しいConfig APIのテスト
+
+func TestNewCacheWithConfig_MemoryOnly(t *testing.T) {
+	config := DefaultConfig().DisableFileCache()
+
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+	require.NotNil(t, cache)
+
+	// デフォルトTTLで保存される
+	err = cache.Set("test-key", "test-value", 0)
+	require.NoError(t, err)
+
+	value, ok := cache.Get("test-key")
+	require.True(t, ok)
+	assert.Equal(t, "test-value", value)
+}
+
+func TestNewCacheWithConfig_CustomTTL(t *testing.T) {
+	config := DefaultConfig().
+		DisableFileCache().
+		WithMemoryTTL(10 * time.Minute)
+
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+
+	c := cache.(*Cache)
+	assert.Equal(t, 10*time.Minute, c.config.MemoryTTL)
+}
+
+func TestNewCacheWithConfig_InvalidConfig(t *testing.T) {
+	config := DefaultConfig().
+		WithMemoryTTL(-1 * time.Minute) // Invalid TTL
+
+	_, err := NewCacheWithConfig(config)
+	assert.Error(t, err)
+}
+
+func TestCache_GenerateKey(t *testing.T) {
+	config := DefaultConfig().DisableFileCache()
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+
+	c := cache.(*Cache)
+
+	// シンプルなキー生成
+	key1 := c.GenerateKey("issues", "owner", "repo")
+	assert.Equal(t, "issues:owner:repo", key1)
+
+	// 数値を含むキー
+	key2 := c.GenerateKey("issue", "owner", "repo", 123)
+	assert.Equal(t, "issue:owner:repo:123", key2)
+
+	// 構造体を含むキー（ハッシュ化される）
+	type Options struct {
+		State string
+		Sort  string
+	}
+	opts := Options{State: "open", Sort: "updated"}
+	key3 := c.GenerateKey("issues", "owner", "repo", opts)
+	assert.Contains(t, key3, "issues:owner:repo:")
+	assert.True(t, len(key3) > len("issues:owner:repo:"))
+}
+
+func TestCache_SetWithDefaultTTL(t *testing.T) {
+	config := DefaultConfig().
+		DisableFileCache().
+		WithMemoryTTL(10 * time.Minute)
+
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+
+	// TTL=0で保存するとデフォルトTTLが使われる
+	err = cache.Set("test-key", "test-value", 0)
+	require.NoError(t, err)
+
+	value, ok := cache.Get("test-key")
+	require.True(t, ok)
+	assert.Equal(t, "test-value", value)
+}
+
+// Contextベースのオプションテスト
+
+func TestCache_GetWithContext_SkipCache(t *testing.T) {
+	config := DefaultConfig().DisableFileCache()
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+
+	c := cache.(*Cache)
+
+	// まず値を保存
+	err = cache.Set("test-key", "test-value", 5*time.Minute)
+	require.NoError(t, err)
+
+	// SkipCacheコンテキストで取得
+	ctx := WithSkipCacheContext(context.Background())
+	value, ok := c.GetWithContext(ctx, "test-key")
+	assert.False(t, ok) // キャッシュをスキップするのでfalse
+	assert.Nil(t, value)
+
+	// 通常のコンテキストでは取得できる
+	value, ok = c.GetWithContext(context.Background(), "test-key")
+	assert.True(t, ok)
+	assert.Equal(t, "test-value", value)
+}
+
+func TestCache_SetWithContext_SkipCache(t *testing.T) {
+	config := DefaultConfig().DisableFileCache()
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+
+	c := cache.(*Cache)
+
+	// SkipCacheコンテキストで保存
+	ctx := WithSkipCacheContext(context.Background())
+	err = c.SetWithContext(ctx, "test-key", "test-value", 0)
+	require.NoError(t, err)
+
+	// キャッシュに保存されていないことを確認
+	value, ok := cache.Get("test-key")
+	assert.False(t, ok)
+	assert.Nil(t, value)
+}
+
+func TestCache_SetWithContext_CustomTTL(t *testing.T) {
+	config := DefaultConfig().
+		DisableFileCache().
+		WithMemoryTTL(10 * time.Minute)
+
+	cache, err := NewCacheWithConfig(config)
+	require.NoError(t, err)
+
+	c := cache.(*Cache)
+
+	// カスタムTTLコンテキストで保存
+	ctx := WithTTLContext(context.Background(), 1*time.Minute)
+	err = c.SetWithContext(ctx, "test-key", "test-value", 0)
+	require.NoError(t, err)
+
+	// 値が保存されていることを確認
+	value, ok := cache.Get("test-key")
+	assert.True(t, ok)
+	assert.Equal(t, "test-value", value)
 }
