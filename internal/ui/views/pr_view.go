@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
@@ -120,7 +121,8 @@ func (m *PRView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prs = []*models.PullRequest{}
 		} else {
 			m.err = nil
-			m.prs = msg.prs
+			sorted := sortPullRequests(msg.prs)
+			m.prs = sorted
 			// Reset cursor if it's out of bounds
 			if m.cursor >= len(m.prs) && len(m.prs) > 0 {
 				m.cursor = len(m.prs) - 1
@@ -572,4 +574,23 @@ func (m *PRView) updateStatusBar() {
 	if m.owner != "" && m.repo != "" {
 		m.statusBar.AddItem("Repo", fmt.Sprintf("%s/%s", m.owner, m.repo))
 	}
+}
+
+func sortPullRequests(prs []*models.PullRequest) []*models.PullRequest {
+	if len(prs) == 0 {
+		return prs
+	}
+
+	sort.SliceStable(prs, func(i, j int) bool {
+		pi := prs[i]
+		pj := prs[j]
+
+		if !pi.UpdatedAt.Equal(pj.UpdatedAt) {
+			return pi.UpdatedAt.After(pj.UpdatedAt)
+		}
+
+		return pi.Number > pj.Number
+	})
+
+	return prs
 }

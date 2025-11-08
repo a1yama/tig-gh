@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -147,7 +148,7 @@ func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues = []*models.Issue{}
 		} else {
 			m.err = nil
-			m.issues = filterOutPullRequests(msg.issues)
+			m.issues = sortIssues(filterOutPullRequests(msg.issues))
 			// Reset cursor if it's out of bounds
 			if m.cursor >= len(m.issues) && len(m.issues) > 0 {
 				m.cursor = len(m.issues) - 1
@@ -588,4 +589,23 @@ func filterOutPullRequests(issues []*models.Issue) []*models.Issue {
 	}
 
 	return filtered
+}
+
+func sortIssues(issues []*models.Issue) []*models.Issue {
+	if len(issues) == 0 {
+		return issues
+	}
+
+	sort.SliceStable(issues, func(i, j int) bool {
+		left := issues[i]
+		right := issues[j]
+
+		if !left.UpdatedAt.Equal(right.UpdatedAt) {
+			return left.UpdatedAt.After(right.UpdatedAt)
+		}
+
+		return left.Number > right.Number
+	})
+
+	return issues
 }

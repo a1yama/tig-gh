@@ -138,8 +138,8 @@ func TestPRView_Update_PRsLoaded(t *testing.T) {
 				if len(view.prs) != 2 {
 					t.Errorf("expected 2 PRs, got %d", len(view.prs))
 				}
-				if view.prs[0].Title != "Test PR 1" {
-					t.Errorf("expected first PR title 'Test PR 1', got '%s'", view.prs[0].Title)
+				if view.prs[0].Title != "Test PR 2" {
+					t.Errorf("expected first PR title 'Test PR 2', got '%s'", view.prs[0].Title)
 				}
 			},
 			expectLoading: false,
@@ -444,6 +444,27 @@ func TestPRView_RenderPRList_Empty(t *testing.T) {
 
 	if !strings.Contains(output, "No pull requests") {
 		t.Fatalf("expected empty-state message, got %q", output)
+	}
+}
+
+func TestSortPullRequests(t *testing.T) {
+	now := time.Now()
+	prs := []*models.PullRequest{
+		{Number: 10, UpdatedAt: now.Add(-2 * time.Hour), Title: "old"},
+		{Number: 5, UpdatedAt: now.Add(-1 * time.Hour), Title: "newer"},
+		{Number: 7, UpdatedAt: now.Add(-1 * time.Hour), Title: "same time higher number"},
+	}
+
+	sorted := sortPullRequests(prs)
+
+	if sorted[0].Number != 7 {
+		t.Fatalf("expected PR with number 7 first, got %d", sorted[0].Number)
+	}
+	if sorted[1].Number != 5 {
+		t.Fatalf("expected PR number 5 second, got %d", sorted[1].Number)
+	}
+	if sorted[2].Number != 10 {
+		t.Fatalf("expected PR number 10 last, got %d", sorted[2].Number)
 	}
 }
 

@@ -93,7 +93,7 @@ func TestIssueView_Update_IssuesLoaded(t *testing.T) {
 						Labels:    []models.Label{{Name: "bug"}},
 						Comments:  5,
 						CreatedAt: now,
-						UpdatedAt: now,
+						UpdatedAt: now.Add(-1 * time.Hour),
 					},
 					{
 						Number:    2,
@@ -126,8 +126,8 @@ func TestIssueView_Update_IssuesLoaded(t *testing.T) {
 				if len(view.issues) != 2 {
 					t.Errorf("expected 2 issues, got %d", len(view.issues))
 				}
-				if view.issues[0].Title != "Test Issue 1" {
-					t.Errorf("expected first issue title 'Test Issue 1', got '%s'", view.issues[0].Title)
+				if view.issues[0].Title != "Test Issue 2" {
+					t.Errorf("expected first issue title 'Test Issue 2', got '%s'", view.issues[0].Title)
 				}
 			},
 			expectLoading: false,
@@ -522,5 +522,29 @@ func TestFilterOutPullRequests(t *testing.T) {
 
 	if filtered[0].Number != 1 || filtered[1].Number != 3 {
 		t.Fatalf("unexpected issues after filtering: %+v", filtered)
+	}
+}
+
+func TestSortIssues(t *testing.T) {
+	now := time.Now()
+	issues := []*models.Issue{
+		{Number: 3, Title: "older", UpdatedAt: now.Add(-2 * time.Hour)},
+		{Number: 10, Title: "newest", UpdatedAt: now.Add(-1 * time.Minute)},
+		{Number: 5, Title: "same time", UpdatedAt: now.Add(-30 * time.Minute)},
+		{Number: 7, Title: "same time higher number", UpdatedAt: now.Add(-30 * time.Minute)},
+	}
+
+	sorted := sortIssues(issues)
+
+	if sorted[0].Number != 10 {
+		t.Fatalf("expected newest issue first, got %d", sorted[0].Number)
+	}
+
+	if sorted[1].Number != 7 || sorted[2].Number != 5 {
+		t.Fatalf("expected tie broken by issue number desc, got %d then %d", sorted[1].Number, sorted[2].Number)
+	}
+
+	if sorted[3].Number != 3 {
+		t.Fatalf("expected oldest issue last, got %d", sorted[3].Number)
 	}
 }
