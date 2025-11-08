@@ -130,21 +130,21 @@ func DefaultKeyBindings() *KeyBindings {
 	// ビュー切り替えキーバインディング
 	viewSwitchBindings := []KeyBinding{
 		{
-			Keys:        []string{"1"},
+			Keys:        []string{"i"},
 			Action:      "view_1",
-			Description: "ビュー1（Issues）",
+			Description: "Issues ビュー",
 			Category:    "view",
 		},
 		{
-			Keys:        []string{"2"},
+			Keys:        []string{"p"},
 			Action:      "view_2",
-			Description: "ビュー2（Pull Requests）",
+			Description: "Pull Requests ビュー",
 			Category:    "view",
 		},
 		{
-			Keys:        []string{"3"},
+			Keys:        []string{"c"},
 			Action:      "view_3",
-			Description: "ビュー3（Commits）",
+			Description: "Commits ビュー",
 			Category:    "view",
 		},
 		{

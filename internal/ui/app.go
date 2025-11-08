@@ -91,7 +91,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// For now, we'll let the views handle their own quit logic
 			return a.delegateToCurrentView(msg)
 
-		case "1":
+		case "i":
 			// Switch to issue view
 			a.currentView = IssueListView
 			if !a.issueViewInited {
@@ -100,7 +100,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
-		case "2":
+		case "p":
 			// Switch to PR view
 			a.currentView = PullRequestListView
 			if !a.prViewInited {
@@ -109,7 +109,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
-		case "3":
+		case "c":
 			// Switch to commit view
 			a.currentView = CommitListView
 			if !a.commitViewInited {

@@ -15,7 +15,7 @@ func TestIntegration_DefaultWithCustomOverride(t *testing.T) {
 	custom := map[string]string{
 		"quit":    "x",        // qからxに変更
 		"refresh": "ctrl+r",   // rからctrl+rに変更
-		"custom":  "c",        // 新規アクション追加
+		"custom":  "z",        // 新規アクション追加
 	}
 
 	if err := kb.LoadCustom(custom); err != nil {
@@ -37,11 +37,10 @@ func TestIntegration_DefaultWithCustomOverride(t *testing.T) {
 	// ただし、他のアクションで'q'が使われていないことを確認
 
 	// customアクションが追加されていることを確認
-	// 注意: 'c'はデフォルトで'comment'にバインドされているため、
-	// customで上書きされる
-	action, match = kb.MatchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	// 注意: 'z'は未使用のキーなので、customアクションに新規追加される
+	action, match = kb.MatchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
 	if !match {
-		t.Error("custom key 'c' not matched")
+		t.Error("custom key 'z' not matched")
 	}
 	if action != "custom" {
 		t.Errorf("custom key matched action = %v, want 'custom'", action)
