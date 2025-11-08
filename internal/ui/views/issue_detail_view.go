@@ -8,6 +8,7 @@ import (
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
+	"github.com/a1yama/tig-gh/internal/ui/browser"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -151,9 +152,8 @@ func (m *IssueDetailView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "o":
 		// Open in browser
-		return m, func() tea.Msg {
-			return openBrowserMsg{url: m.issue.HTMLURL}
-		}
+		_ = browser.Open(m.issue.HTMLURL)
+		return m, nil
 	}
 
 	return m, nil
