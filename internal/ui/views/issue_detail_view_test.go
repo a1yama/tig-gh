@@ -233,20 +233,9 @@ func TestIssueDetailView_View_WithoutSize(t *testing.T) {
 	}
 }
 
-// TestIssueDetailView_OpenInBrowser tests the browser open functionality
-func TestIssueDetailView_OpenInBrowser(t *testing.T) {
-	issue := createTestIssue()
-	view := NewIssueDetailView(issue, "owner", "repo", nil)
-
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}
-	_, cmd := view.Update(msg)
-
-	// Should return a command (even if it's just a placeholder)
-	// The actual browser opening is tested in integration tests
-	if cmd == nil {
-		t.Log("Warning: 'o' key did not return a command (browser open might not be implemented yet)")
-	}
-}
+// NOTE: TestIssueDetailView_OpenInBrowser has been removed to prevent
+// browser windows from opening during test runs. The 'o' key functionality
+// should be tested in integration/E2E tests instead.
 
 // Helper functions
 

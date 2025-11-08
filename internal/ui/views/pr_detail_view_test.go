@@ -405,19 +405,9 @@ func TestPRDetailView_View_WithReviews(t *testing.T) {
 	}
 }
 
-// TestPRDetailView_OpenInBrowser tests the browser open functionality
-func TestPRDetailView_OpenInBrowser(t *testing.T) {
-	pr := createTestPullRequest()
-	view := NewPRDetailView(pr, "owner", "repo", nil)
-
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}
-	_, cmd := view.Update(msg)
-
-	// Should return a command
-	if cmd == nil {
-		t.Log("Warning: 'o' key did not return a command (browser open might not be implemented yet)")
-	}
-}
+// NOTE: TestPRDetailView_OpenInBrowser has been removed to prevent
+// browser windows from opening during test runs. The 'o' key functionality
+// should be tested in integration/E2E tests instead.
 
 // TestPRDetailView_GoToTop tests the g key to go to top
 func TestPRDetailView_GoToTop(t *testing.T) {
