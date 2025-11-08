@@ -147,7 +147,7 @@ func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues = []*models.Issue{}
 		} else {
 			m.err = nil
-			m.issues = msg.issues
+			m.issues = filterOutPullRequests(msg.issues)
 			// Reset cursor if it's out of bounds
 			if m.cursor >= len(m.issues) && len(m.issues) > 0 {
 				m.cursor = len(m.issues) - 1
@@ -569,4 +569,23 @@ func formatRelativeTime(t time.Time) string {
 		}
 		return fmt.Sprintf("%d years ago", years)
 	}
+}
+
+func filterOutPullRequests(issues []*models.Issue) []*models.Issue {
+	if len(issues) == 0 {
+		return issues
+	}
+
+	filtered := make([]*models.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue == nil {
+			continue
+		}
+		if strings.Contains(issue.HTMLURL, "/pull/") {
+			continue
+		}
+		filtered = append(filtered, issue)
+	}
+
+	return filtered
 }

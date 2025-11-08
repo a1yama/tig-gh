@@ -507,3 +507,20 @@ func TestIssueView_ShowDetailOnEnter(t *testing.T) {
 		t.Fatalf("detail view output missing issue title: %s", output)
 	}
 }
+
+func TestFilterOutPullRequests(t *testing.T) {
+	issues := []*models.Issue{
+		{Number: 1, HTMLURL: "https://github.com/org/repo/issues/1"},
+		{Number: 2, HTMLURL: "https://github.com/org/repo/pull/2"},
+		{Number: 3, HTMLURL: ""},
+	}
+
+	filtered := filterOutPullRequests(issues)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 issues after filtering, got %d", len(filtered))
+	}
+
+	if filtered[0].Number != 1 || filtered[1].Number != 3 {
+		t.Fatalf("unexpected issues after filtering: %+v", filtered)
+	}
+}
