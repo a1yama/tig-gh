@@ -11,6 +11,12 @@ func convertToIssue(ghIssue *github.Issue) *models.Issue {
 		return nil
 	}
 
+	// GitHub APIの Issues.ListByRepo は Pull Request も返すため除外
+	// Pull Request には PullRequestLinks フィールドがある
+	if ghIssue.PullRequestLinks != nil {
+		return nil
+	}
+
 	issue := &models.Issue{
 		ID:       ghIssue.GetID(),
 		Number:   ghIssue.GetNumber(),
