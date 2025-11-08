@@ -1,6 +1,7 @@
 package views
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -43,13 +44,13 @@ func TestPRDetailView_Init(t *testing.T) {
 // TestPRDetailView_Update_KeyboardInput tests keyboard input handling
 func TestPRDetailView_Update_KeyboardInput(t *testing.T) {
 	tests := []struct {
-		name          string
-		key           string
-		expectedQuit  bool
-		expectedBack  bool
-		shouldScroll  bool
-		scrollBefore  int
-		scrollAfter   int
+		name         string
+		key          string
+		expectedQuit bool
+		expectedBack bool
+		shouldScroll bool
+		scrollBefore int
+		scrollAfter  int
 	}{
 		{
 			name:         "q key should go back",
@@ -387,6 +388,20 @@ func TestPRDetailView_View_WithoutSize(t *testing.T) {
 	// Should return a placeholder or initialization message
 	if output == "" {
 		t.Error("View should return content even without size")
+	}
+}
+
+func TestPRDetailView_CommentsError(t *testing.T) {
+	pr := createTestPullRequest()
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+	view.width = 120
+	view.height = 50
+
+	view.Update(prCommentsLoadedMsg{comments: nil, err: errors.New("fail")})
+
+	output := view.renderCommentsTab()
+	if !strings.Contains(output, "Failed to load comments") {
+		t.Fatalf("expected failure message in comments tab, got %q", output)
 	}
 }
 

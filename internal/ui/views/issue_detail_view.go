@@ -18,11 +18,6 @@ import (
 // backMsg is a message to go back to the previous view
 type backMsg struct{}
 
-// openBrowserMsg is a message to open the issue in browser
-type openBrowserMsg struct {
-	url string
-}
-
 // issueCommentsLoadedMsg is a message when comments are loaded
 type issueCommentsLoadedMsg struct {
 	comments []*models.Comment
@@ -34,6 +29,7 @@ type IssueDetailView struct {
 	issue           *models.Issue
 	comments        []*models.Comment
 	commentsLoading bool
+	commentsErr     error
 	owner           string
 	repo            string
 	issueRepo       repository.IssueRepository
@@ -47,6 +43,7 @@ type IssueDetailView struct {
 
 // NewIssueDetailView creates a new issue detail view
 func NewIssueDetailView(issue *models.Issue, owner, repo string, issueRepo repository.IssueRepository) *IssueDetailView {
+	commentsLoading := issueRepo != nil
 	return &IssueDetailView{
 		issue:           issue,
 		owner:           owner,
@@ -54,7 +51,7 @@ func NewIssueDetailView(issue *models.Issue, owner, repo string, issueRepo repos
 		issueRepo:       issueRepo,
 		scrollOffset:    0,
 		loading:         false,
-		commentsLoading: true, // Start loading comments
+		commentsLoading: commentsLoading,
 		renderer:        newMarkdownRenderer(80),
 	}
 }
@@ -64,6 +61,7 @@ func (m *IssueDetailView) Init() tea.Cmd {
 	if m.issueRepo != nil {
 		return m.loadComments()
 	}
+	m.commentsLoading = false
 	return nil
 }
 
@@ -106,8 +104,9 @@ func (m *IssueDetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case issueCommentsLoadedMsg:
 		m.commentsLoading = false
 		if msg.err != nil {
-			m.err = msg.err
+			m.commentsErr = msg.err
 		} else {
+			m.commentsErr = nil
 			m.comments = msg.comments
 		}
 		return m, nil
@@ -198,6 +197,12 @@ func (m *IssueDetailView) View() string {
 		content.WriteString("\n\n")
 	} else if m.commentsLoading {
 		content.WriteString(styles.MutedStyle.Render("Loading comments..."))
+		content.WriteString("\n\n")
+	} else if m.commentsErr != nil {
+		content.WriteString(styles.ErrorStyle.Render(fmt.Sprintf("Failed to load comments: %v", m.commentsErr)))
+		content.WriteString("\n\n")
+	} else {
+		content.WriteString(styles.MutedStyle.Render("No comments yet"))
 		content.WriteString("\n\n")
 	}
 

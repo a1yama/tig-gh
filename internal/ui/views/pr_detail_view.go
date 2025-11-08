@@ -45,6 +45,7 @@ type PRDetailView struct {
 	pr              *models.PullRequest
 	comments        []*models.Comment
 	commentsLoading bool
+	commentsErr     error
 	owner           string
 	repo            string
 	prRepo          repository.PullRequestRepository
@@ -59,6 +60,7 @@ type PRDetailView struct {
 
 // NewPRDetailView creates a new PR detail view
 func NewPRDetailView(pr *models.PullRequest, owner, repo string, prRepo repository.PullRequestRepository) *PRDetailView {
+	commentsLoading := prRepo != nil
 	return &PRDetailView{
 		pr:              pr,
 		owner:           owner,
@@ -67,7 +69,7 @@ func NewPRDetailView(pr *models.PullRequest, owner, repo string, prRepo reposito
 		currentTab:      tabOverview,
 		scrollOffset:    0,
 		loading:         false,
-		commentsLoading: true, // Start loading comments
+		commentsLoading: commentsLoading,
 		renderer:        newMarkdownRenderer(80),
 	}
 }
@@ -77,6 +79,7 @@ func (m *PRDetailView) Init() tea.Cmd {
 	if m.prRepo != nil {
 		return m.loadComments()
 	}
+	m.commentsLoading = false
 	return nil
 }
 
@@ -119,8 +122,9 @@ func (m *PRDetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prCommentsLoadedMsg:
 		m.commentsLoading = false
 		if msg.err != nil {
-			m.err = msg.err
+			m.commentsErr = msg.err
 		} else {
+			m.commentsErr = nil
 			m.comments = msg.comments
 		}
 		return m, nil
@@ -583,6 +587,8 @@ func (m *PRDetailView) renderCommentsTab() string {
 
 	if m.commentsLoading {
 		s.WriteString(styles.MutedStyle.Render("Loading comments..."))
+	} else if m.commentsErr != nil {
+		s.WriteString(styles.ErrorStyle.Render(fmt.Sprintf("Failed to load comments: %v", m.commentsErr)))
 	} else if len(m.comments) == 0 {
 		s.WriteString(styles.MutedStyle.Render("No comments yet."))
 	} else {

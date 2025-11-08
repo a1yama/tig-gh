@@ -1,6 +1,8 @@
 package views
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,18 +34,22 @@ func TestIssueDetailView_Init(t *testing.T) {
 	if view.loading {
 		t.Error("loading should be false after initialization")
 	}
+
+	if view.commentsLoading {
+		t.Error("commentsLoading should be false when repository is nil")
+	}
 }
 
 // TestIssueDetailView_Update_KeyboardInput tests keyboard input handling
 func TestIssueDetailView_Update_KeyboardInput(t *testing.T) {
 	tests := []struct {
-		name          string
-		key           string
-		expectedQuit  bool
-		expectedBack  bool
-		shouldScroll  bool
-		scrollBefore  int
-		scrollAfter   int
+		name         string
+		key          string
+		expectedQuit bool
+		expectedBack bool
+		shouldScroll bool
+		scrollBefore int
+		scrollAfter  int
 	}{
 		{
 			name:         "q key should go back",
@@ -230,6 +236,24 @@ func TestIssueDetailView_View_WithoutSize(t *testing.T) {
 	// Should return a placeholder or initialization message
 	if output == "" {
 		t.Error("View should return content even without size")
+	}
+}
+
+func TestIssueDetailView_CommentsErrorDoesNotBreakView(t *testing.T) {
+	issue := createTestIssue()
+	view := NewIssueDetailView(issue, "owner", "repo", nil)
+	view.width = 120
+	view.height = 40
+
+	view.Update(issueCommentsLoadedMsg{comments: nil, err: errors.New("boom")})
+
+	if view.err != nil {
+		t.Fatalf("issue error should remain nil, got %v", view.err)
+	}
+
+	output := view.View()
+	if !strings.Contains(output, "Failed to load comments") {
+		t.Fatalf("expected comment error message, got %q", output)
 	}
 }
 
