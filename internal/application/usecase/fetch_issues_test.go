@@ -49,6 +49,10 @@ func (m *mockIssueRepository) Unlock(ctx context.Context, owner, repo string, nu
 	return nil
 }
 
+func (m *mockIssueRepository) ListComments(ctx context.Context, owner, repo string, number int, opts *models.CommentOptions) ([]*models.Comment, error) {
+	return nil, nil
+}
+
 func TestFetchIssuesUseCase_Execute(t *testing.T) {
 	now := time.Now()
 

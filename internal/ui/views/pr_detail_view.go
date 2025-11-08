@@ -201,7 +201,7 @@ func (m *PRDetailView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		// Open in browser
 		return m, func() tea.Msg {
-			return openBrowserMsg{url: fmt.Sprintf("https://github.com/owner/repo/pull/%d", m.pr.Number)}
+			return openBrowserMsg{url: m.pr.HTMLURL}
 		}
 	}
 

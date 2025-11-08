@@ -100,6 +100,21 @@ func (mr *MockIssueRepositoryMockRecorder) List(ctx, owner, repo, opts any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockIssueRepository)(nil).List), ctx, owner, repo, opts)
 }
 
+// ListComments mocks base method.
+func (m *MockIssueRepository) ListComments(ctx context.Context, owner, repo string, number int, opts *models.CommentOptions) ([]*models.Comment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListComments", ctx, owner, repo, number, opts)
+	ret0, _ := ret[0].([]*models.Comment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListComments indicates an expected call of ListComments.
+func (mr *MockIssueRepositoryMockRecorder) ListComments(ctx, owner, repo, number, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListComments", reflect.TypeOf((*MockIssueRepository)(nil).ListComments), ctx, owner, repo, number, opts)
+}
+
 // Lock mocks base method.
 func (m *MockIssueRepository) Lock(ctx context.Context, owner, repo string, number int) error {
 	m.ctrl.T.Helper()

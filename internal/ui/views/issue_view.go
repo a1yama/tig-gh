@@ -3,13 +3,13 @@ package views
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
+	"github.com/a1yama/tig-gh/internal/ui/browser"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
@@ -92,11 +92,6 @@ func (m *IssueView) Init() tea.Cmd {
 
 // Update handles messages
 func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if debugFile != nil {
-		defer debugFile.Close()
-	}
-
 	// If showing detail view and not a window size message, delegate to detail view first
 	if m.showingDetail && m.detailView != nil {
 		// Let detail view handle all messages except backMsg
@@ -134,27 +129,23 @@ func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailView = nil
 		return m, nil
 
+	case openBrowserMsg:
+		// Open issue in browser
+		_ = browser.Open(msg.url)
+		return m, nil
+
 	case tea.KeyMsg:
 		keyStr := msg.String()
 		if isTerminalResponse(keyStr) {
 			return m, nil
 		}
-		if debugFile != nil {
-			fmt.Fprintf(debugFile, "[Update] KeyMsg=%s Type=%d showingDetail=%v\n", keyStr, msg.Type, m.showingDetail)
-		}
 
 		// Ignore unknown/unhandled key types (like terminal responses)
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 0 {
-			if debugFile != nil {
-				fmt.Fprintf(debugFile, "  -> Ignoring empty runes key\n")
-			}
 			return m, nil
 		}
 
 		// Handle key press in list view
-		if debugFile != nil {
-			fmt.Fprintf(debugFile, "  -> Calling handleKeyPress\n")
-		}
 		return m.handleKeyPress(msg)
 
 	case issuesLoadedMsg:
@@ -214,16 +205,8 @@ func (m *IssueView) fetchIssues() tea.Cmd {
 
 // handleKeyPress handles keyboard input
 func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if debugFile != nil {
-		defer debugFile.Close()
-	}
-
 	// Handle Enter key using Type check for reliability
 	if msg.Type == tea.KeyEnter {
-		if debugFile != nil {
-			fmt.Fprintf(debugFile, "[handleKeyPress] Enter detected! cursor=%d issues=%d\n", m.cursor, len(m.issues))
-		}
 		// View issue detail
 		if len(m.issues) > 0 && m.cursor < len(m.issues) {
 			selectedIssue := m.issues[m.cursor]
@@ -235,9 +218,6 @@ func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailView.width = m.width
 			m.detailView.height = m.height
 			m.showingDetail = true
-			if debugFile != nil {
-				fmt.Fprintf(debugFile, "  -> Detail view created, showingDetail=%v\n", m.showingDetail)
-			}
 			return m, tea.Batch(
 				m.detailView.Init(),
 				func() tea.Msg { return forceRenderMsg{} },
@@ -322,12 +302,6 @@ func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // View renders the issue view
 func (m *IssueView) View() string {
-	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if debugFile != nil {
-		fmt.Fprintf(debugFile, "[View] showingDetail=%v detailView=%v\n", m.showingDetail, m.detailView != nil)
-		debugFile.Close()
-	}
-
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
 	}

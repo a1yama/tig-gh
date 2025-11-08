@@ -8,6 +8,7 @@ import (
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
+	"github.com/a1yama/tig-gh/internal/ui/browser"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
@@ -119,6 +120,11 @@ func (m *PRView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Return from detail view
 		m.showingDetail = false
 		m.detailView = nil
+		return m, nil
+
+	case openBrowserMsg:
+		// Open PR in browser
+		_ = browser.Open(msg.url)
 		return m, nil
 
 	case tea.KeyMsg:

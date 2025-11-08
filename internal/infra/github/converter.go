@@ -283,6 +283,7 @@ func convertToPullRequest(ghPR *github.PullRequest) *models.PullRequest {
 		Title:          ghPR.GetTitle(),
 		Body:           ghPR.GetBody(),
 		State:          convertToPRState(ghPR.GetState()),
+		HTMLURL:        ghPR.GetHTMLURL(),
 		Mergeable:      ghPR.GetMergeable(),
 		MergeableState: ghPR.GetMergeableState(),
 		Merged:         ghPR.GetMerged(),

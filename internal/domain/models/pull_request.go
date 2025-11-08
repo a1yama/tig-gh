@@ -9,6 +9,7 @@ type PullRequest struct {
 	Title            string
 	Body             string
 	State            PRState
+	HTMLURL          string
 	Author           User
 	Head             Branch
 	Base             Branch
