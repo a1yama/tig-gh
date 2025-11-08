@@ -1,61 +1,102 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/a1yama/tig-gh/internal/application/usecase"
+	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Issue represents a GitHub issue (dummy data structure for now)
-type Issue struct {
-	Number    int
-	Title     string
-	State     string
-	Author    string
-	Labels    []string
-	Comments  int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+// issuesLoadedMsg is sent when issues are loaded
+type issuesLoadedMsg struct {
+	issues []*models.Issue
+	err    error
 }
 
 // IssueView is the model for the issue list view
 type IssueView struct {
-	issues     []Issue
-	cursor     int
-	selected   map[int]struct{}
-	loading    bool
-	err        error
-	width      int
-	height     int
-	statusBar  *components.StatusBar
-	showHelp   bool
+	fetchIssuesUseCase usecase.FetchIssuesUseCase
+	owner              string
+	repo               string
+	issues             []*models.Issue
+	cursor             int
+	selected           map[int]struct{}
+	loading            bool
+	err                error
+	width              int
+	height             int
+	statusBar          *components.StatusBar
+	showHelp           bool
+	filterState        models.IssueState
 }
 
-// NewIssueView creates a new issue view
+// NewIssueView creates a new issue view (for backward compatibility)
 func NewIssueView() *IssueView {
 	return &IssueView{
-		issues:    generateDummyIssues(),
-		cursor:    0,
-		selected:  make(map[int]struct{}),
-		loading:   false,
-		statusBar: components.NewStatusBar(),
-		showHelp:  false,
+		fetchIssuesUseCase: nil,
+		owner:              "",
+		repo:               "",
+		issues:             []*models.Issue{},
+		cursor:             0,
+		selected:           make(map[int]struct{}),
+		loading:            false,
+		statusBar:          components.NewStatusBar(),
+		showHelp:           false,
+		filterState:        models.IssueStateOpen,
+	}
+}
+
+// NewIssueViewWithUseCase creates a new issue view with UseCase
+func NewIssueViewWithUseCase(fetchIssuesUseCase usecase.FetchIssuesUseCase, owner, repo string) *IssueView {
+	return &IssueView{
+		fetchIssuesUseCase: fetchIssuesUseCase,
+		owner:              owner,
+		repo:               repo,
+		issues:             []*models.Issue{},
+		cursor:             0,
+		selected:           make(map[int]struct{}),
+		loading:            true, // Start in loading state
+		statusBar:          components.NewStatusBar(),
+		showHelp:           false,
+		filterState:        models.IssueStateOpen,
 	}
 }
 
 // Init initializes the issue view
 func (m *IssueView) Init() tea.Cmd {
+	if m.fetchIssuesUseCase != nil {
+		return m.fetchIssues()
+	}
 	return nil
 }
 
 // Update handles messages
 func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case issuesLoadedMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.issues = []*models.Issue{}
+		} else {
+			m.err = nil
+			m.issues = msg.issues
+			// Reset cursor if it's out of bounds
+			if m.cursor >= len(m.issues) && len(m.issues) > 0 {
+				m.cursor = len(m.issues) - 1
+			} else if len(m.issues) == 0 {
+				m.cursor = 0
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
 
@@ -69,6 +110,31 @@ func (m *IssueView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// fetchIssues fetches issues from the API
+func (m *IssueView) fetchIssues() tea.Cmd {
+	return func() tea.Msg {
+		if m.fetchIssuesUseCase == nil {
+			return issuesLoadedMsg{
+				issues: []*models.Issue{},
+				err:    fmt.Errorf("fetch issues use case not initialized"),
+			}
+		}
+
+		opts := &models.IssueOptions{
+			State:     m.filterState,
+			Sort:      models.IssueSortUpdated,
+			Direction: models.SortDirectionDesc,
+			PerPage:   100,
+		}
+
+		issues, err := m.fetchIssuesUseCase.Execute(context.Background(), m.owner, m.repo, opts)
+		return issuesLoadedMsg{
+			issues: issues,
+			err:    err,
+		}
+	}
+}
+
 // handleKeyPress handles keyboard input
 func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -77,6 +143,35 @@ func (m *IssueView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "?":
 		m.showHelp = !m.showHelp
+		return m, nil
+
+	case "r":
+		// Refresh issues
+		if !m.loading && m.fetchIssuesUseCase != nil {
+			m.loading = true
+			m.err = nil
+			return m, m.fetchIssues()
+		}
+		return m, nil
+
+	case "f":
+		// Toggle filter between open, closed, all
+		if !m.loading {
+			switch m.filterState {
+			case models.IssueStateOpen:
+				m.filterState = models.IssueStateClosed
+			case models.IssueStateClosed:
+				m.filterState = models.IssueStateAll
+			case models.IssueStateAll:
+				m.filterState = models.IssueStateOpen
+			}
+			// Refresh with new filter
+			if m.fetchIssuesUseCase != nil {
+				m.loading = true
+				m.err = nil
+				return m, m.fetchIssues()
+			}
+		}
 		return m, nil
 
 	case "j", "down":
@@ -208,7 +303,7 @@ func (m *IssueView) renderIssueList() string {
 }
 
 // renderIssueLine renders a single issue line
-func (m *IssueView) renderIssueLine(issue Issue, index int) string {
+func (m *IssueView) renderIssueLine(issue *models.Issue, index int) string {
 	// Cursor indicator
 	cursor := "  "
 	if m.cursor == index {
@@ -216,7 +311,7 @@ func (m *IssueView) renderIssueLine(issue Issue, index int) string {
 	}
 
 	// State badge
-	stateBadge := styles.GetStateBadge(issue.State)
+	stateBadge := styles.GetStateBadge(string(issue.State))
 
 	// Issue number
 	number := styles.IssueNumberStyle.Render(fmt.Sprintf("#%-5d", issue.Number))
@@ -233,13 +328,13 @@ func (m *IssueView) renderIssueLine(issue Issue, index int) string {
 	if len(issue.Labels) > 0 {
 		labelParts := []string{}
 		for _, label := range issue.Labels {
-			labelParts = append(labelParts, styles.LabelStyle.Render(label))
+			labelParts = append(labelParts, styles.LabelStyle.Render(label.Name))
 		}
 		labels = " " + strings.Join(labelParts, " ")
 	}
 
 	// Metadata (author, comments, date)
-	author := styles.AuthorStyle.Render("@" + issue.Author)
+	author := styles.AuthorStyle.Render("@" + issue.Author.Login)
 	comments := ""
 	if issue.Comments > 0 {
 		comments = styles.MutedStyle.Render(fmt.Sprintf("💬 %d", issue.Comments))
@@ -308,7 +403,10 @@ General:
 // updateStatusBar updates the status bar with current state
 func (m *IssueView) updateStatusBar() {
 	m.statusBar.ClearItems()
-	m.statusBar.SetMode("Issues")
+
+	// Set mode based on filter state
+	modeText := fmt.Sprintf("Issues (%s)", m.filterState)
+	m.statusBar.SetMode(modeText)
 
 	// Add current position
 	if len(m.issues) > 0 {
@@ -321,115 +419,9 @@ func (m *IssueView) updateStatusBar() {
 		m.statusBar.AddItem("Selected", fmt.Sprintf("%d", len(m.selected)))
 	}
 
-	// Add repository info (dummy for now)
-	m.statusBar.AddItem("Repo", "owner/repo")
-}
-
-// generateDummyIssues generates dummy issues for testing
-func generateDummyIssues() []Issue {
-	now := time.Now()
-
-	return []Issue{
-		{
-			Number:    1,
-			Title:     "Implement basic TUI framework",
-			State:     "open",
-			Author:    "alice",
-			Labels:    []string{"enhancement", "ui"},
-			Comments:  5,
-			CreatedAt: now.Add(-48 * time.Hour),
-			UpdatedAt: now.Add(-2 * time.Hour),
-		},
-		{
-			Number:    2,
-			Title:     "Add GitHub API integration",
-			State:     "open",
-			Author:    "bob",
-			Labels:    []string{"feature", "api"},
-			Comments:  3,
-			CreatedAt: now.Add(-36 * time.Hour),
-			UpdatedAt: now.Add(-5 * time.Hour),
-		},
-		{
-			Number:    3,
-			Title:     "Fix authentication bug",
-			State:     "closed",
-			Author:    "charlie",
-			Labels:    []string{"bug", "security"},
-			Comments:  8,
-			CreatedAt: now.Add(-72 * time.Hour),
-			UpdatedAt: now.Add(-24 * time.Hour),
-		},
-		{
-			Number:    4,
-			Title:     "Improve performance of issue list rendering",
-			State:     "open",
-			Author:    "alice",
-			Labels:    []string{"performance"},
-			Comments:  2,
-			CreatedAt: now.Add(-24 * time.Hour),
-			UpdatedAt: now.Add(-1 * time.Hour),
-		},
-		{
-			Number:    5,
-			Title:     "Add dark mode support",
-			State:     "open",
-			Author:    "dave",
-			Labels:    []string{"enhancement", "ui"},
-			Comments:  12,
-			CreatedAt: now.Add(-96 * time.Hour),
-			UpdatedAt: now.Add(-12 * time.Hour),
-		},
-		{
-			Number:    6,
-			Title:     "Write comprehensive documentation",
-			State:     "open",
-			Author:    "eve",
-			Labels:    []string{"documentation"},
-			Comments:  0,
-			CreatedAt: now.Add(-12 * time.Hour),
-			UpdatedAt: now.Add(-12 * time.Hour),
-		},
-		{
-			Number:    7,
-			Title:     "Implement keyboard shortcuts",
-			State:     "closed",
-			Author:    "frank",
-			Labels:    []string{"enhancement", "ux"},
-			Comments:  6,
-			CreatedAt: now.Add(-120 * time.Hour),
-			UpdatedAt: now.Add(-48 * time.Hour),
-		},
-		{
-			Number:    8,
-			Title:     "Add search and filter functionality",
-			State:     "open",
-			Author:    "grace",
-			Labels:    []string{"feature"},
-			Comments:  4,
-			CreatedAt: now.Add(-60 * time.Hour),
-			UpdatedAt: now.Add(-3 * time.Hour),
-		},
-		{
-			Number:    9,
-			Title:     "Optimize API rate limiting",
-			State:     "open",
-			Author:    "bob",
-			Labels:    []string{"performance", "api"},
-			Comments:  7,
-			CreatedAt: now.Add(-84 * time.Hour),
-			UpdatedAt: now.Add(-6 * time.Hour),
-		},
-		{
-			Number:    10,
-			Title:     "Add unit tests for UI components",
-			State:     "open",
-			Author:    "alice",
-			Labels:    []string{"testing"},
-			Comments:  1,
-			CreatedAt: now.Add(-18 * time.Hour),
-			UpdatedAt: now.Add(-18 * time.Hour),
-		},
+	// Add repository info
+	if m.owner != "" && m.repo != "" {
+		m.statusBar.AddItem("Repo", fmt.Sprintf("%s/%s", m.owner, m.repo))
 	}
 }
 

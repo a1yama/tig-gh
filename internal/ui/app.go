@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/a1yama/tig-gh/internal/application/usecase"
 	"github.com/a1yama/tig-gh/internal/ui/views"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,19 +17,37 @@ const (
 
 // App is the main application model
 type App struct {
-	currentView ViewType
-	issueView   tea.Model
-	width       int
-	height      int
-	ready       bool
+	currentView        ViewType
+	issueView          tea.Model
+	fetchIssuesUseCase usecase.FetchIssuesUseCase
+	owner              string
+	repo               string
+	width              int
+	height             int
+	ready              bool
 }
 
-// NewApp creates a new application instance
+// NewApp creates a new application instance (for backward compatibility)
 func NewApp() *App {
 	return &App{
-		currentView: IssueListView,
-		issueView:   views.NewIssueView(),
-		ready:       false,
+		currentView:        IssueListView,
+		issueView:          views.NewIssueView(),
+		fetchIssuesUseCase: nil,
+		owner:              "",
+		repo:               "",
+		ready:              false,
+	}
+}
+
+// NewAppWithUseCase creates a new application instance with UseCase
+func NewAppWithUseCase(fetchIssuesUseCase usecase.FetchIssuesUseCase, owner, repo string) *App {
+	return &App{
+		currentView:        IssueListView,
+		issueView:          views.NewIssueViewWithUseCase(fetchIssuesUseCase, owner, repo),
+		fetchIssuesUseCase: fetchIssuesUseCase,
+		owner:              owner,
+		repo:               repo,
+		ready:              false,
 	}
 }
 
