@@ -91,6 +91,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Check if we're in search view with input focused
+		// If so, skip global key bindings except for special cases
+		if a.currentView == SearchView {
+			if searchView, ok := a.searchView.(*views.SearchView); ok {
+				if searchView.IsInputFocused() {
+					// Only handle Ctrl+C when input is focused
+					if msg.String() == "ctrl+c" {
+						return a, tea.Quit
+					}
+					// Delegate everything else to search view
+					return a.delegateToCurrentView(msg)
+				}
+			}
+		}
+
 		// Global key bindings
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -125,7 +140,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
-		case "s":
+		case "/":
 			// Switch to search view
 			a.currentView = SearchView
 			if !a.searchViewInited {

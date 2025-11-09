@@ -150,8 +150,7 @@ func (m *SearchView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.Blur()
 			return m, nil
 		case "enter":
-			// Perform search
-			m.textInput.Blur()
+			// Perform search without blurring
 			return m, m.performSearch()
 		default:
 			var cmd tea.Cmd
@@ -172,11 +171,6 @@ func (m *SearchView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, nil
-
-	case "/":
-		// Focus on search input
-		m.textInput.Focus()
-		return m, textinput.Blink
 
 	case "enter":
 		// View detail of selected result
@@ -376,7 +370,7 @@ func (m *SearchView) renderHeader() string {
 // renderResults renders the search results
 func (m *SearchView) renderResults() string {
 	if len(m.results) == 0 {
-		return styles.MutedStyle.Render("No results found. Press '/' to search.")
+		return styles.MutedStyle.Render("No results found. Enter query and press 'enter' to search.")
 	}
 
 	var s strings.Builder
@@ -505,8 +499,13 @@ func (m *SearchView) updateStatusBar() {
 
 	// Add help
 	if m.textInput.Focused() {
-		m.statusBar.AddItem("", "esc: cancel • enter: search")
+		m.statusBar.AddItem("", "esc: blur • enter: search")
 	} else {
-		m.statusBar.AddItem("", "/: search • t: type • s: state • enter: view • r: refresh • q: quit")
+		m.statusBar.AddItem("", "t: type • s: state • enter: view • r: refresh • i: issues • p: prs • c: commits • q: quit")
 	}
+}
+
+// IsInputFocused returns true if the text input is focused
+func (m *SearchView) IsInputFocused() bool {
+	return m.textInput.Focused()
 }
