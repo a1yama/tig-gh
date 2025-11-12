@@ -39,6 +39,10 @@ func (r *CachedPullRequestRepository) List(ctx context.Context, owner, repo stri
 		return nil, err
 	}
 
+	if prs == nil {
+		prs = []*models.PullRequest{}
+	}
+
 	// Store in cache (respecting context options)
 	// defaultTTL=0 means use Config's default TTL
 	_ = r.cache.SetWithContext(ctx, key, prs, 0)
@@ -189,6 +193,10 @@ func (r *CachedPullRequestRepository) ListReviews(ctx context.Context, owner, re
 		return nil, err
 	}
 
+	if reviews == nil {
+		reviews = []*models.Review{}
+	}
+
 	// Store in cache
 	_ = r.cache.SetWithContext(ctx, key, reviews, 0)
 
@@ -211,6 +219,10 @@ func (r *CachedPullRequestRepository) ListComments(ctx context.Context, owner, r
 	comments, err := r.repo.ListComments(ctx, owner, repo, number, opts)
 	if err != nil {
 		return nil, err
+	}
+
+	if comments == nil {
+		comments = []*models.Comment{}
 	}
 
 	// Store in cache

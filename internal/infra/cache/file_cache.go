@@ -1,9 +1,10 @@
 package cache
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/gob"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,13 +12,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
 )
 
 // fileCacheEntry ファイルキャッシュエントリ
 type fileCacheEntry struct {
-	Value      interface{} `json:"value"`
-	Expiration time.Time   `json:"expiration"`
+	Value      interface{}
+	Expiration time.Time
 }
 
 // isExpired 有効期限が切れているかチェック
@@ -32,6 +34,48 @@ func (e *fileCacheEntry) isExpired() bool {
 type FileCache struct {
 	dir string
 	mu  sync.RWMutex
+}
+
+const cacheFileExtension = ".gob"
+
+var registeredGobTypes sync.Map
+
+// init で主要なモデル型を登録しておくことで、プロセス再起動後も復元できるようにする
+func init() {
+	mustRegisterGobType(&models.Issue{})
+	mustRegisterGobType([]*models.Issue{})
+	mustRegisterGobType(&models.PullRequest{})
+	mustRegisterGobType([]*models.PullRequest{})
+	mustRegisterGobType(&models.Comment{})
+	mustRegisterGobType([]*models.Comment{})
+	mustRegisterGobType(&models.Review{})
+	mustRegisterGobType([]*models.Review{})
+	mustRegisterGobType(&models.Commit{})
+	mustRegisterGobType([]*models.Commit{})
+	mustRegisterGobType(&models.SearchResults{})
+	mustRegisterGobType([]models.SearchResult{})
+	mustRegisterGobType(map[string]interface{}{})
+	mustRegisterGobType("")
+}
+
+func mustRegisterGobType(sample interface{}) {
+	if sample == nil {
+		return
+	}
+
+	typ := fmt.Sprintf("%T", sample)
+	if _, loaded := registeredGobTypes.LoadOrStore(typ, struct{}{}); loaded {
+		return
+	}
+
+	gob.Register(sample)
+}
+
+func registerGobValue(value interface{}) {
+	if value == nil {
+		return
+	}
+	mustRegisterGobType(value)
 }
 
 // NewFileCache 新しいFileCacheを作成
@@ -63,7 +107,7 @@ func sanitizeKey(key string) string {
 
 // getFilePath キーに対応するファイルパスを取得
 func (c *FileCache) getFilePath(key string) string {
-	filename := sanitizeKey(key) + ".json"
+	filename := sanitizeKey(key) + cacheFileExtension
 	return filepath.Join(c.dir, filename)
 }
 
@@ -74,29 +118,30 @@ func (c *FileCache) Get(key string) (interface{}, bool) {
 
 	filePath := c.getFilePath(key)
 
-	// ファイルを読み込む
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false
 		}
-		// その他のエラーの場合もfalseを返す
 		return nil, false
 	}
 
-	// JSONをデコード
-	var entry fileCacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil, false
-	}
-
-	// 有効期限チェック
-	if entry.isExpired() {
-		// 有効期限切れの場合は削除（非同期で実行）
+	entry, err := decodeEntry(data)
+	if err != nil {
+		// 壊れたエントリは削除してキャッシュミス扱い
 		go func() {
 			c.mu.Lock()
 			defer c.mu.Unlock()
-			os.Remove(filePath)
+			_ = os.Remove(filePath)
+		}()
+		return nil, false
+	}
+
+	if entry.isExpired() {
+		go func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			_ = os.Remove(filePath)
 		}()
 		return nil, false
 	}
@@ -109,6 +154,8 @@ func (c *FileCache) Set(key string, value interface{}, ttl time.Duration) error 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	registerGobValue(value)
+
 	var expiration time.Time
 	if ttl > 0 {
 		expiration = time.Now().Add(ttl)
@@ -119,13 +166,11 @@ func (c *FileCache) Set(key string, value interface{}, ttl time.Duration) error 
 		Expiration: expiration,
 	}
 
-	// JSONエンコード
-	data, err := json.Marshal(entry)
+	data, err := encodeEntry(&entry)
 	if err != nil {
-		return fmt.Errorf("failed to marshal cache entry: %w", err)
+		return fmt.Errorf("failed to encode cache entry: %w", err)
 	}
 
-	// ファイルに書き込む
 	filePath := c.getFilePath(key)
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
@@ -142,7 +187,6 @@ func (c *FileCache) Delete(key string) error {
 	filePath := c.getFilePath(key)
 	err := os.Remove(filePath)
 
-	// ファイルが存在しない場合はエラーとしない
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete cache file: %w", err)
 	}
@@ -155,7 +199,6 @@ func (c *FileCache) Clear() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// ディレクトリ内のすべてのファイルを削除
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return fmt.Errorf("failed to read cache directory: %w", err)
@@ -165,7 +208,6 @@ func (c *FileCache) Clear() error {
 		if !entry.IsDir() {
 			filePath := filepath.Join(c.dir, entry.Name())
 			if err := os.Remove(filePath); err != nil {
-				// 個別のファイル削除エラーは無視して続行
 				continue
 			}
 		}
@@ -184,7 +226,6 @@ func (c *FileCache) Cleanup() error {
 		return fmt.Errorf("failed to read cache directory: %w", err)
 	}
 
-	now := time.Now()
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -196,16 +237,32 @@ func (c *FileCache) Cleanup() error {
 			continue
 		}
 
-		var cacheEntry fileCacheEntry
-		if err := json.Unmarshal(data, &cacheEntry); err != nil {
+		cacheEntry, err := decodeEntry(data)
+		if err != nil {
+			_ = os.Remove(filePath)
 			continue
 		}
 
-		// 有効期限切れの場合は削除
-		if !cacheEntry.Expiration.IsZero() && now.After(cacheEntry.Expiration) {
-			os.Remove(filePath)
+		if cacheEntry.isExpired() {
+			_ = os.Remove(filePath)
 		}
 	}
 
 	return nil
+}
+
+func encodeEntry(entry *fileCacheEntry) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(entry); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func decodeEntry(data []byte) (*fileCacheEntry, error) {
+	var entry fileCacheEntry
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&entry); err != nil {
+		return nil, err
+	}
+	return &entry, nil
 }

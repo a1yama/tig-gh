@@ -39,6 +39,10 @@ func (r *CachedIssueRepository) List(ctx context.Context, owner, repo string, op
 		return nil, err
 	}
 
+	if issues == nil {
+		issues = []*models.Issue{}
+	}
+
 	// Store in cache (respecting context options)
 	// defaultTTL=0 means use Config's default TTL
 	_ = r.cache.SetWithContext(ctx, key, issues, 0)
@@ -171,6 +175,10 @@ func (r *CachedIssueRepository) ListComments(ctx context.Context, owner, repo st
 	comments, err := r.repo.ListComments(ctx, owner, repo, number, opts)
 	if err != nil {
 		return nil, err
+	}
+
+	if comments == nil {
+		comments = []*models.Comment{}
 	}
 
 	// Store in cache

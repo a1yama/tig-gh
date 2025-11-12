@@ -30,13 +30,13 @@ func TestFileCache_SetAndGet(t *testing.T) {
 		{
 			name:  "数値の保存と取得",
 			key:   "number-key",
-			value: float64(12345), // JSONは数値をfloat64として扱う
+			value: 12345,
 			ttl:   5 * time.Minute,
 		},
 		{
 			name:  "マップの保存と取得",
 			key:   "map-key",
-			value: map[string]interface{}{"name": "test", "age": float64(20)},
+			value: map[string]interface{}{"name": "test", "age": 20},
 			ttl:   5 * time.Minute,
 		},
 		{
@@ -115,7 +115,7 @@ func TestFileCache_Delete(t *testing.T) {
 	assert.Nil(t, value)
 
 	// ファイルも削除されていることを確認
-	filePath := filepath.Join(tmpDir, sanitizeKey("delete-key")+".json")
+	filePath := filepath.Join(tmpDir, sanitizeKey("delete-key")+cacheFileExtension)
 	_, err = os.Stat(filePath)
 	assert.True(t, os.IsNotExist(err), "ファイルが削除されているべき")
 }
