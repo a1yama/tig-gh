@@ -17,6 +17,7 @@ const (
 	PullRequestListView
 	CommitListView
 	SearchView
+	ReviewQueueView
 )
 
 // App is the main application model
@@ -24,6 +25,7 @@ type App struct {
 	currentView         ViewType
 	issueView           tea.Model
 	prView              tea.Model
+	prQueueView         tea.Model
 	commitView          tea.Model
 	searchView          tea.Model
 	fetchIssuesUseCase  *usecase.FetchIssuesUseCase
@@ -37,6 +39,7 @@ type App struct {
 	ready               bool
 	issueViewInited     bool
 	prViewInited        bool
+	prQueueViewInited   bool
 	commitViewInited    bool
 	searchViewInited    bool
 }
@@ -47,6 +50,7 @@ func NewApp() *App {
 		currentView: IssueListView,
 		issueView:   views.NewIssueView(),
 		prView:      views.NewPRView(),
+		prQueueView: views.NewPRQueueView(),
 		commitView:  views.NewCommitView(),
 		owner:       "",
 		repo:        "",
@@ -66,6 +70,7 @@ func NewAppWithUseCases(
 		currentView:         IssueListView,
 		issueView:           views.NewIssueViewWithUseCase(fetchIssuesUseCase, owner, repo),
 		prView:              views.NewPRViewWithUseCase(fetchPRsUseCase, owner, repo),
+		prQueueView:         views.NewPRQueueViewWithUseCase(fetchPRsUseCase, owner, repo),
 		commitView:          views.NewCommitViewWithUseCase(fetchCommitsUseCase, owner, repo),
 		searchView:          views.NewSearchViewWithUseCase(searchUseCase, owner, repo),
 		fetchIssuesUseCase:  fetchIssuesUseCase,
@@ -131,6 +136,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
+		case "R":
+			// Switch to review queue view
+			a.currentView = ReviewQueueView
+			if !a.prQueueViewInited {
+				a.prQueueViewInited = true
+				return a, a.prQueueView.Init()
+			}
+			return a, nil
+
 		case "c":
 			// Switch to commit view
 			a.currentView = CommitListView
@@ -166,6 +180,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.prView, cmd = a.prView.Update(msg)
 		cmds = append(cmds, cmd)
 
+		a.prQueueView, cmd = a.prQueueView.Update(msg)
+		cmds = append(cmds, cmd)
+
 		a.commitView, cmd = a.commitView.Update(msg)
 		cmds = append(cmds, cmd)
 
@@ -191,6 +208,10 @@ func (a *App) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PullRequestListView:
 		a.prView, cmd = a.prView.Update(msg)
+		return a, cmd
+
+	case ReviewQueueView:
+		a.prQueueView, cmd = a.prQueueView.Update(msg)
 		return a, cmd
 
 	case CommitListView:
@@ -230,6 +251,9 @@ func (a *App) View() string {
 
 	case PullRequestListView:
 		return a.prView.View()
+
+	case ReviewQueueView:
+		return a.prQueueView.View()
 
 	case CommitListView:
 		return a.commitView.View()

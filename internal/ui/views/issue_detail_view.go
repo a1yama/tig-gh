@@ -385,6 +385,9 @@ func (m *IssueDetailView) renderError() string {
 
 // formatTime formats a time to a readable string
 func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
 	return t.Format("2006-01-02 15:04:05")
 }
 

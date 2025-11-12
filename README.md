@@ -12,6 +12,7 @@ tig-ghは、tigのような直感的なインターフェースでGitHubを管�
 - Issue・PR ビューでは Open / Closed / All を即座に切り替え、コメントやレビュー履歴も読み込める
 - PR 詳細ビューには Overview / Files / Commits / Comments のタブとレビューサマリを表示
 - `/` で呼び出す Search ビューからリポジトリ内の Issue / PR を横断検索
+- Review Queue ビューで長時間オープンの PR や未承認 PR を経過時間付きで確認
 - GitHub API 呼び出し結果をメモリ＋ファイルキャッシュし、再取得を高速化
 - テーマや主要キーバインドを設定ファイルで調整可能
 
@@ -101,6 +102,7 @@ tig-gh --version
 - `p`: Pull Requests ビュー
 - `c`: Commits ビュー
 - `/`: Search ビュー（検索入力にフォーカス）
+- `R`: Review Queue ビュー（Shift+R）
 
 ### 主なキーバインディング
 
@@ -127,6 +129,12 @@ tig-gh --version
 - 入力フォーカス解除後は `j` / `k` で結果を移動し、`Enter` で対応する Issue / PR 詳細を開く
 - `t`: 検索対象（Issues / Pull Requests / Both）を切り替え
 - `s`: 状態フィルタ（Open / Closed / All）を切り替え
+
+### Review Queueビュー
+
+- オープン中の PR を作成日時の古い順に並べ、レビュー・承認までの経過を一目で把握
+- 「Awaiting review」「Awaiting approval」「Approved」などのステータスとレビュー数（✓/✗/?）を表示
+- `j` / `k` / `g` / `G` で一覧操作、`Enter` で詳細ビュー、`r` でリストとレビュー指標を再取得
 
 ## 開発
 

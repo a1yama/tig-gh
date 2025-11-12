@@ -41,7 +41,7 @@ type SearchView struct {
 	statusBar     *components.StatusBar
 	searchType    models.SearchType
 	searchState   models.IssueState
-	detailView    tea.Model  // Can be IssueDetailView or PRDetailView
+	detailView    tea.Model // Can be IssueDetailView or PRDetailView
 	showingDetail bool
 }
 
@@ -274,6 +274,7 @@ func (m *SearchView) showDetail() tea.Cmd {
 		}
 	case models.SearchTypePR:
 		if result.PullRequest != nil {
+			ensurePRNumber(result.PullRequest)
 			m.detailView = NewPRDetailView(result.PullRequest, m.owner, m.repo, nil)
 			if prView, ok := m.detailView.(*PRDetailView); ok {
 				prView.width = m.width

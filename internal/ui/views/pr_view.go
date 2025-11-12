@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-
 // prsLoadedMsg is sent when pull requests are loaded
 type prsLoadedMsg struct {
 	prs []*models.PullRequest
@@ -138,6 +137,9 @@ func (m *PRView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err = nil
 			sorted := sortPullRequests(msg.prs)
+			for _, pr := range sorted {
+				ensurePRNumber(pr)
+			}
 			m.prs = sorted
 			// Reset cursor if it's out of bounds
 			if m.cursor >= len(m.prs) && len(m.prs) > 0 {
@@ -425,8 +427,13 @@ func (m *PRView) renderPRLine(pr *models.PullRequest, index int) string {
 		}
 	}
 
-	// PR number
-	number := styles.IssueNumberStyle.Render(fmt.Sprintf("#%-5d", pr.Number))
+	// PR number (fallback to URL parsing)
+	var number string
+	if n, ok := prDisplayNumber(pr); ok {
+		number = styles.IssueNumberStyle.Render(fmt.Sprintf("#%-5d", n))
+	} else {
+		number = styles.IssueNumberStyle.Render("#????")
+	}
 
 	// Title (with max width to prevent wrapping)
 	titleStyle := styles.IssueTitleStyle
@@ -440,6 +447,9 @@ func (m *PRView) renderPRLine(pr *models.PullRequest, index int) string {
 		maxTitleWidth = 20
 	}
 	titleText := pr.Title
+	if titleText == "" {
+		titleText = "(no title)"
+	}
 	if len(titleText) > maxTitleWidth {
 		titleText = titleText[:maxTitleWidth-3] + "..."
 	}
@@ -473,7 +483,7 @@ func (m *PRView) renderPRLine(pr *models.PullRequest, index int) string {
 	}
 
 	// Metadata (author, date)
-	author := styles.AuthorStyle.Render("@" + pr.Author.Login)
+	author := styles.AuthorStyle.Render(formatAuthorHandle(pr.Author))
 	relativeTime := formatRelativeTime(pr.UpdatedAt)
 	date := styles.DateStyle.Render(relativeTime)
 

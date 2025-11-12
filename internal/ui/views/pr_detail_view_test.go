@@ -414,9 +414,62 @@ func TestPRDetailView_View_WithReviews(t *testing.T) {
 
 	output := view.View()
 
-	// Should contain review information
-	if !containsString(output, "Review") && !containsString(output, "review") {
-		t.Log("Warning: View might not be showing review information")
+	if !containsString(output, "Reviews:") {
+		t.Fatalf("expected metadata to include reviews row, got %q", output)
+	}
+}
+
+func TestPRDetailView_renderMetadata_ShowsReviewsLoading(t *testing.T) {
+	pr := createTestPullRequest()
+	pr.Reviews = nil
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+	view.reviewsLoading = true
+
+	meta := view.renderMetadata()
+	if !containsString(meta, "Reviews:") {
+		t.Fatalf("expected reviews label in metadata, got %q", meta)
+	}
+	if !containsString(meta, "Loading reviews") {
+		t.Fatalf("expected loading indicator, got %q", meta)
+	}
+}
+
+func TestPRDetailView_renderMetadata_ShowsReviewsError(t *testing.T) {
+	pr := createTestPullRequest()
+	pr.Reviews = nil
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+	view.reviewsErr = errors.New("boom")
+
+	meta := view.renderMetadata()
+	if !containsString(meta, "Failed to load reviews") {
+		t.Fatalf("expected error message, got %q", meta)
+	}
+}
+
+func TestPRDetailView_renderMetadata_ShowsNoReviews(t *testing.T) {
+	pr := createTestPullRequest()
+	pr.Reviews = nil
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+
+	meta := view.renderMetadata()
+	if !containsString(meta, "No reviews") {
+		t.Fatalf("expected 'No reviews' fallback, got %q", meta)
+	}
+}
+
+func TestPRDetailView_renderMetadata_ShowsNumberRow(t *testing.T) {
+	pr := createTestPullRequest()
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+
+	meta := view.renderMetadata()
+	if !containsString(meta, "Assignees:") {
+		t.Fatalf("expected Assignees label, got %q", meta)
+	}
+	if !containsString(meta, "Number:") {
+		t.Fatalf("expected Number label, got %q", meta)
+	}
+	if !containsString(meta, "#456") {
+		t.Fatalf("expected PR number value, got %q", meta)
 	}
 }
 
@@ -581,68 +634,6 @@ func TestPRDetailView_getReviewsSummary_WithPending(t *testing.T) {
 	summary := view.getReviewsSummary()
 	if summary == "" {
 		t.Error("Summary should not be empty with pending reviews")
-	}
-}
-
-func TestPRDetailView_renderReviewTimeline_WithData(t *testing.T) {
-	base := time.Date(2024, time.March, 1, 9, 0, 0, 0, time.UTC)
-	pr := createTestPullRequest()
-	pr.CreatedAt = base
-	pr.Reviews = []models.Review{
-		{
-			ID:          1,
-			State:       models.ReviewStateCommented,
-			SubmittedAt: base.Add(2 * time.Hour),
-		},
-		{
-			ID:          2,
-			State:       models.ReviewStateApproved,
-			SubmittedAt: base.Add(5 * time.Hour),
-		},
-	}
-	view := NewPRDetailView(pr, "owner", "repo", nil)
-
-	rows := view.renderReviewTimeline()
-	if len(rows) != 2 {
-		t.Fatalf("expected 2 timeline rows, got %d", len(rows))
-	}
-
-	if !containsString(rows[0], "2h") {
-		t.Errorf("expected creation to review row to include duration, got %q", rows[0])
-	}
-	if !containsString(rows[1], "3h") {
-		t.Errorf("expected review to approval row to include duration, got %q", rows[1])
-	}
-}
-
-func TestPRDetailView_renderReviewTimeline_NoReviews(t *testing.T) {
-	pr := createTestPullRequest()
-	pr.Reviews = nil
-	view := NewPRDetailView(pr, "owner", "repo", nil)
-
-	rows := view.renderReviewTimeline()
-	if len(rows) != 2 {
-		t.Fatalf("expected 2 timeline rows, got %d", len(rows))
-	}
-	if !containsString(rows[0], "Not reviewed yet") {
-		t.Errorf("expected 'Not reviewed yet' message, got %q", rows[0])
-	}
-	if !containsString(rows[1], "Not approved yet") {
-		t.Errorf("expected 'Not approved yet' message, got %q", rows[1])
-	}
-}
-
-func TestPRDetailView_renderReviewTimeline_Loading(t *testing.T) {
-	pr := createTestPullRequest()
-	view := NewPRDetailView(pr, "owner", "repo", nil)
-	view.reviewsLoading = true
-
-	rows := view.renderReviewTimeline()
-	if len(rows) != 2 {
-		t.Fatalf("expected 2 timeline rows, got %d", len(rows))
-	}
-	if !containsString(rows[0], "Loading reviews") {
-		t.Errorf("expected loading message, got %q", rows[0])
 	}
 }
 

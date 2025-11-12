@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
@@ -71,6 +70,7 @@ type PRDetailView struct {
 func NewPRDetailView(pr *models.PullRequest, owner, repo string, prRepo repository.PullRequestRepository) *PRDetailView {
 	commentsLoading := prRepo != nil
 	reviewsLoading := prRepo != nil
+	ensurePRNumber(pr)
 	return &PRDetailView{
 		pr:              pr,
 		owner:           owner,
@@ -313,7 +313,7 @@ func (m *PRDetailView) View() string {
 func (m *PRDetailView) renderHeader() string {
 	// PR number and state
 	numberStyle := styles.IssueNumberStyle
-	number := numberStyle.Render(fmt.Sprintf("PR #%d", m.pr.Number))
+	number := numberStyle.Render(formatPRTitle(m.pr))
 
 	stateBadge := styles.GetStateBadge(string(m.pr.State))
 
@@ -362,14 +362,24 @@ func (m *PRDetailView) renderHeader() string {
 func (m *PRDetailView) renderMetadata() string {
 	var parts []string
 
+	// Number
+	numberLabel := styles.MutedStyle.Render("Number:")
+	var numberValue string
+	if n, ok := prDisplayNumber(m.pr); ok {
+		numberValue = styles.NormalStyle.Render(fmt.Sprintf("#%d", n))
+	} else {
+		numberValue = styles.NormalStyle.Render("#???")
+	}
+	parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, numberLabel, " ", numberValue))
+
 	// Author
 	authorLabel := styles.MutedStyle.Render("Author:")
-	authorValue := styles.AuthorStyle.Render("@" + m.pr.Author.Login)
+	authorValue := styles.AuthorStyle.Render(formatAuthorHandle(m.pr.Author))
 	parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, authorLabel, " ", authorValue))
 
 	// Base and Head branches
 	branchLabel := styles.MutedStyle.Render("Base:")
-	branchValue := styles.NormalStyle.Render(m.pr.Base.Name + " ← " + m.pr.Head.Name)
+	branchValue := styles.NormalStyle.Render(formatBranchName(m.pr.Base) + " ← " + formatBranchName(m.pr.Head))
 	parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, branchLabel, " ", branchValue))
 
 	// Status
@@ -388,20 +398,29 @@ func (m *PRDetailView) renderMetadata() string {
 	parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, updatedLabel, " ", updatedValue))
 
 	// Reviews
-	if len(m.pr.Reviews) > 0 {
-		reviewsLabel := styles.MutedStyle.Render("Reviews:")
-		reviewsSummary := m.getReviewsSummary()
-		parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, reviewsLabel, " ", reviewsSummary))
+	reviewsLabel := styles.MutedStyle.Render("Reviews:")
+	var reviewsValue string
+	switch {
+	case m.reviewsLoading:
+		reviewsValue = styles.MutedStyle.Render("Loading reviews...")
+	case m.reviewsErr != nil:
+		reviewsValue = styles.ErrorStyle.Render(fmt.Sprintf("Failed to load reviews: %v", m.reviewsErr))
+	default:
+		reviewsValue = m.getReviewsSummary()
 	}
+	parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, reviewsLabel, " ", reviewsValue))
 
 	// Assignees
+	assigneesLabel := styles.MutedStyle.Render("Assignees:")
 	if len(m.pr.Assignees) > 0 {
 		assigneeNames := []string{}
 		for _, assignee := range m.pr.Assignees {
-			assigneeNames = append(assigneeNames, "@"+assignee.Login)
+			assigneeNames = append(assigneeNames, formatAuthorHandle(assignee))
 		}
-		assigneesLabel := styles.MutedStyle.Render("Assignees:")
 		assigneesValue := styles.AuthorStyle.Render(strings.Join(assigneeNames, ", "))
+		parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, assigneesLabel, " ", assigneesValue))
+	} else {
+		assigneesValue := styles.MutedStyle.Render("None")
 		parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, assigneesLabel, " ", assigneesValue))
 	}
 
@@ -423,65 +442,10 @@ func (m *PRDetailView) renderMetadata() string {
 		parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, milestoneLabel, " ", milestoneValue))
 	}
 
-	if timelineRows := m.renderReviewTimeline(); len(timelineRows) > 0 {
-		parts = append(parts, timelineRows...)
-	}
-
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // renderReviewTimeline renders metrics related to review timings
-func (m *PRDetailView) renderReviewTimeline() []string {
-	if m.pr == nil || m.pr.CreatedAt.IsZero() {
-		return nil
-	}
-
-	creationLabel := styles.MutedStyle.Render("Creation → Review:")
-	approvalLabel := styles.MutedStyle.Render("Review → Approval:")
-	join := func(label, value string) string {
-		return lipgloss.JoinHorizontal(lipgloss.Top, label, " ", value)
-	}
-
-	if m.reviewsLoading {
-		loading := styles.MutedStyle.Render("Loading reviews...")
-		return []string{
-			join(creationLabel, loading),
-			join(approvalLabel, loading),
-		}
-	}
-
-	if m.reviewsErr != nil {
-		errValue := styles.ErrorStyle.Render(fmt.Sprintf("Failed to load reviews: %v", m.reviewsErr))
-		unavailable := styles.MutedStyle.Render("Unavailable")
-		return []string{
-			join(creationLabel, errValue),
-			join(approvalLabel, unavailable),
-		}
-	}
-
-	reviewStart := firstReviewSubmittedAt(m.pr.Reviews)
-	approvalTime := firstApprovalSubmittedAt(m.pr.Reviews)
-
-	var creationValue string
-	if reviewStart != nil {
-		creationValue = renderDurationValue(m.pr.CreatedAt, *reviewStart)
-	} else {
-		creationValue = styles.MutedStyle.Render("Not reviewed yet")
-	}
-
-	var approvalValue string
-	if reviewStart != nil && approvalTime != nil {
-		approvalValue = renderDurationValue(*reviewStart, *approvalTime)
-	} else {
-		approvalValue = styles.MutedStyle.Render("Not approved yet")
-	}
-
-	return []string{
-		join(creationLabel, creationValue),
-		join(approvalLabel, approvalValue),
-	}
-}
-
 // getMergeStatus returns the merge status string
 func (m *PRDetailView) getMergeStatus() string {
 	if m.pr.Merged {
@@ -525,36 +489,7 @@ func (m *PRDetailView) getMergeStatus() string {
 
 // getReviewsSummary returns a summary of reviews
 func (m *PRDetailView) getReviewsSummary() string {
-	var summary []string
-	reviewCounts := make(map[models.ReviewState]int)
-
-	for _, review := range m.pr.Reviews {
-		reviewCounts[review.State]++
-	}
-
-	if count := reviewCounts[models.ReviewStateApproved]; count > 0 {
-		summary = append(summary, lipgloss.NewStyle().
-			Foreground(lipgloss.Color("35")).
-			Render(fmt.Sprintf("✓%d", count)))
-	}
-
-	if count := reviewCounts[models.ReviewStateChangesRequested]; count > 0 {
-		summary = append(summary, lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
-			Render(fmt.Sprintf("✗%d", count)))
-	}
-
-	if count := reviewCounts[models.ReviewStatePending]; count > 0 {
-		summary = append(summary, lipgloss.NewStyle().
-			Foreground(lipgloss.Color("220")).
-			Render(fmt.Sprintf("?%d", count)))
-	}
-
-	if len(summary) == 0 {
-		return styles.MutedStyle.Render("No reviews")
-	}
-
-	return strings.Join(summary, " ")
+	return renderReviewSummary(m.pr.Reviews)
 }
 
 // renderTabNavigation renders the tab navigation
@@ -749,8 +684,8 @@ func (m *PRDetailView) applyScroll(content string) string {
 	lines := strings.Split(content, "\n")
 
 	// Calculate available height for content
-	// Header (3 lines) + Metadata (~8 lines) + Tabs (1 line) + Separators (2) + Footer (2) = ~16 lines
-	availableHeight := m.height - 16
+	// Header + expanded metadata + tabs + separators + footer ≈ 18 lines
+	availableHeight := m.height - 18
 	if availableHeight < 5 {
 		availableHeight = 5
 	}
@@ -808,104 +743,4 @@ func (m *PRDetailView) renderLoading() string {
 // renderError renders an error state
 func (m *PRDetailView) renderError() string {
 	return styles.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err))
-}
-
-// renderDurationValue renders a duration and timestamp pair for timeline metrics
-func renderDurationValue(start, end time.Time) string {
-	durationText := styles.NormalStyle.Render(formatDurationBetween(start, end))
-	timestampText := styles.DateStyle.Render(formatTime(end))
-	return lipgloss.JoinHorizontal(lipgloss.Top, durationText, " ", timestampText)
-}
-
-// firstReviewSubmittedAt returns the earliest review submission time
-func firstReviewSubmittedAt(reviews []models.Review) *time.Time {
-	var earliest *time.Time
-	for _, review := range reviews {
-		if review.SubmittedAt.IsZero() {
-			continue
-		}
-		if review.State == models.ReviewStatePending {
-			continue
-		}
-		reviewTime := review.SubmittedAt
-		if earliest == nil || reviewTime.Before(*earliest) {
-			earliest = &reviewTime
-		}
-	}
-	return earliest
-}
-
-// firstApprovalSubmittedAt returns the earliest approval submission time
-func firstApprovalSubmittedAt(reviews []models.Review) *time.Time {
-	var earliest *time.Time
-	for _, review := range reviews {
-		if review.State != models.ReviewStateApproved {
-			continue
-		}
-		if review.SubmittedAt.IsZero() {
-			continue
-		}
-		reviewTime := review.SubmittedAt
-		if earliest == nil || reviewTime.Before(*earliest) {
-			earliest = &reviewTime
-		}
-	}
-	return earliest
-}
-
-// formatDurationBetween formats the duration between two timestamps
-func formatDurationBetween(start, end time.Time) string {
-	if end.Before(start) {
-		start, end = end, start
-	}
-	return formatDurationShort(end.Sub(start))
-}
-
-// formatDurationShort formats a duration into a short human readable string
-func formatDurationShort(d time.Duration) string {
-	if d <= 0 {
-		return "<1m"
-	}
-	var parts []string
-	days := d / (24 * time.Hour)
-	if days > 0 {
-		parts = append(parts, fmt.Sprintf("%dd", days))
-		d -= days * 24 * time.Hour
-	}
-	hours := d / time.Hour
-	if hours > 0 {
-		parts = append(parts, fmt.Sprintf("%dh", hours))
-		d -= hours * time.Hour
-	}
-	minutes := d / time.Minute
-	if minutes > 0 {
-		parts = append(parts, fmt.Sprintf("%dm", minutes))
-		d -= minutes * time.Minute
-	}
-	if len(parts) == 0 {
-		seconds := int((d + time.Second/2) / time.Second)
-		if seconds <= 0 {
-			seconds = 1
-		}
-		parts = append(parts, fmt.Sprintf("%ds", seconds))
-	}
-	if len(parts) > 2 {
-		parts = parts[:2]
-	}
-	return strings.Join(parts, " ")
-}
-
-// flattenReviews converts review pointers to value slices
-func flattenReviews(reviews []*models.Review) []models.Review {
-	if len(reviews) == 0 {
-		return nil
-	}
-	result := make([]models.Review, 0, len(reviews))
-	for _, review := range reviews {
-		if review == nil {
-			continue
-		}
-		result = append(result, *review)
-	}
-	return result
 }
