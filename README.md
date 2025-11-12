@@ -8,13 +8,14 @@ tig-ghは、tigのような直感的なインターフェースでGitHubを管�
 
 ## 特徴
 
-- tigライクなキーバインディング
-- Issue管理（一覧・詳細・作成・編集）
-- Pull Request管理（一覧・詳細・レビュー・マージ）
-- コミット履歴の表示
-- 高速な検索・フィルタリング
-- カスタマイズ可能なテーマ
-- オフライン対応（キャッシュ機能）
+- Issue / Pull Request / Commit の一覧と詳細を tig ライクな操作感で閲覧
+- Issue・PR ビューでは Open / Closed / All を即座に切り替え、コメントやレビュー履歴も読み込める
+- PR 詳細ビューには Overview / Files / Commits / Comments のタブとレビューサマリを表示
+- `/` で呼び出す Search ビューからリポジトリ内の Issue / PR を横断検索
+- GitHub API 呼び出し結果をメモリ＋ファイルキャッシュし、再取得を高速化
+- テーマや主要キーバインドを設定ファイルで調整可能
+
+> 現時点では参照系機能にフォーカスしており、Issue 作成・編集や PR マージ/レビュー送信などの書き込み操作は UI からはまだ行えません。
 
 ## インストール
 
@@ -37,84 +38,95 @@ sudo make install
 
 ### GitHub認証
 
-#### Personal Access Tokenを使用
+Personal Access Token (Classic) もしくは Fine-grained PAT を使用します。必要なスコープは `repo`, `read:org`, `read:user` です。
 
 ```bash
-# トークンを作成（GitHub Settings > Developer settings > Personal access tokens）
-# 必要なスコープ: repo, read:org, read:user
-
-# 環境変数に設定
+# 例: 環境変数に設定
 export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 ```
 
-#### gh CLIを使用
-
-```bash
-# GitHub CLIで認証
-gh auth login
-
-# tig-ghは自動的にgh CLIの認証情報を使用
-tig-gh
-```
+`GITHUB_TOKEN` が未設定の場合は、設定ファイルの `github.token` を参照します。gh CLI の資格情報連携はまだ実装されていません。
 
 ### 設定ファイル
 
-設定ファイルは `~/.config/tig-gh/config.yaml` に配置します。
+tig-gh は以下の優先順位で設定ファイルを探索します。
+
+1. `./.tig-gh/config.yaml`
+2. `~/.config/tig-gh/config.yaml`（デフォルト）
+3. `~/.tig-gh/config.yaml`
+4. `/etc/tig-gh/config.yaml`
+
+`config/default.yaml` をコピーして編集すると手早く始められます。
 
 ```yaml
 github:
-  token: ghp_xxxxxxxxxxxx  # または環境変数 GITHUB_TOKEN
+  token: ghp_xxxxxxxxxxxx
   default_owner: your-username
   default_repo: your-repo
 
 ui:
-  theme: dark  # dark / light / custom
+  theme: dark  # dark / light / auto
   default_view: issues
+  key_bindings:
+    quit: q
+    refresh: r
+    search: /
 
-keybindings:
-  quit: q
-  refresh: r
-  search: /
+cache:
+  enabled: true
+  ttl: 15m
+  dir: ~/.cache/tig-gh
 ```
+
+キャッシュはデフォルトで `~/.cache/tig-gh` に保存されます。TTL やファイルキャッシュの有効/無効は `cache` セクションで調整できます。
 
 ## 使い方
 
 ### 基本操作
 
 ```bash
-# 起動
+# 現在のGitリポジトリで起動（origin から owner/repo を推測）
 tig-gh
 
-# 特定のリポジトリを指定
+# 任意のリポジトリを明示指定
 tig-gh owner/repo
 
-# Issueビューから起動
-tig-gh --view issues owner/repo
+# バージョンを表示
+tig-gh --version
 ```
 
-### キーバインディング
+### ビュー切り替え
+
+- `i`: Issues ビュー
+- `p`: Pull Requests ビュー
+- `c`: Commits ビュー
+- `/`: Search ビュー（検索入力にフォーカス）
+
+### 主なキーバインディング
 
 #### グローバル
-- `q`: 終了 / 前の画面に戻る
-- `?`: ヘルプ表示
-- `r`: リフレッシュ
-- `/`: 検索
-- `1-9`: ビュー切り替え
+- `q` / `ctrl+c`: 終了（詳細ビューでは前の画面に戻る）
+- `?`: 現在のビュー専用ヘルプをトグル
+- `r`: リストをリフレッシュ（Search ビューでは直前のクエリを再実行）
+- `j` / `k` または `↓` / `↑`: リストを上下に移動
+- `g` / `G`: 先頭 / 末尾にジャンプ
+- `ctrl+u` / `ctrl+d`: 半ページ単位でスクロール（対応ビュー）
+- `Enter`: 選択中アイテムの詳細ビューを開く
 
-#### ナビゲーション
-- `j` / `↓`: 下に移動
-- `k` / `↑`: 上に移動
-- `g`: 先頭に移動
-- `G`: 末尾に移動
-- `Ctrl+D`: 半ページ下
-- `Ctrl+U`: 半ページ上
+#### Issues / Pull Requests ビュー
+- `f`: 表示対象を Open → Closed → All で循環
+- 詳細ビュー内では `j` / `k` / `g` / `G` でスクロール、`o` でブラウザを開く
+- PR 詳細ビューでは `1`〜`4` で Overview / Files / Commits / Comments の各タブを切り替え、レビューサマリやコメントを確認
 
-#### アクション
-- `Enter`: 選択 / 詳細表示
-- `o`: ブラウザで開く
-- `n`: 新規作成
-- `e`: 編集
-- `c`: クローズ/再オープン
+#### Commits ビュー
+- `Enter`: コミット詳細ビュー
+- 詳細ビューでは `j` / `k` / `g` / `G` に加えて `ctrl+u` / `ctrl+d` でページング
+
+#### Search ビュー
+- 起動直後は検索入力がフォーカス済み。`Enter` で検索、`Esc` でフォーカス解除
+- 入力フォーカス解除後は `j` / `k` で結果を移動し、`Enter` で対応する Issue / PR 詳細を開く
+- `t`: 検索対象（Issues / Pull Requests / Both）を切り替え
+- `s`: 状態フィルタ（Open / Closed / All）を切り替え
 
 ## 開発
 
