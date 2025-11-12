@@ -584,6 +584,68 @@ func TestPRDetailView_getReviewsSummary_WithPending(t *testing.T) {
 	}
 }
 
+func TestPRDetailView_renderReviewTimeline_WithData(t *testing.T) {
+	base := time.Date(2024, time.March, 1, 9, 0, 0, 0, time.UTC)
+	pr := createTestPullRequest()
+	pr.CreatedAt = base
+	pr.Reviews = []models.Review{
+		{
+			ID:          1,
+			State:       models.ReviewStateCommented,
+			SubmittedAt: base.Add(2 * time.Hour),
+		},
+		{
+			ID:          2,
+			State:       models.ReviewStateApproved,
+			SubmittedAt: base.Add(5 * time.Hour),
+		},
+	}
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+
+	rows := view.renderReviewTimeline()
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 timeline rows, got %d", len(rows))
+	}
+
+	if !containsString(rows[0], "2h") {
+		t.Errorf("expected creation to review row to include duration, got %q", rows[0])
+	}
+	if !containsString(rows[1], "3h") {
+		t.Errorf("expected review to approval row to include duration, got %q", rows[1])
+	}
+}
+
+func TestPRDetailView_renderReviewTimeline_NoReviews(t *testing.T) {
+	pr := createTestPullRequest()
+	pr.Reviews = nil
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+
+	rows := view.renderReviewTimeline()
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 timeline rows, got %d", len(rows))
+	}
+	if !containsString(rows[0], "Not reviewed yet") {
+		t.Errorf("expected 'Not reviewed yet' message, got %q", rows[0])
+	}
+	if !containsString(rows[1], "Not approved yet") {
+		t.Errorf("expected 'Not approved yet' message, got %q", rows[1])
+	}
+}
+
+func TestPRDetailView_renderReviewTimeline_Loading(t *testing.T) {
+	pr := createTestPullRequest()
+	view := NewPRDetailView(pr, "owner", "repo", nil)
+	view.reviewsLoading = true
+
+	rows := view.renderReviewTimeline()
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 timeline rows, got %d", len(rows))
+	}
+	if !containsString(rows[0], "Loading reviews") {
+		t.Errorf("expected loading message, got %q", rows[0])
+	}
+}
+
 // TestPRDetailView_renderBody_Empty tests rendering empty body
 func TestPRDetailView_renderBody_Empty(t *testing.T) {
 	pr := createTestPullRequest()

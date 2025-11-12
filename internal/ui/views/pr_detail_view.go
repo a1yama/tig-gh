@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
@@ -40,12 +41,20 @@ type prCommentsLoadedMsg struct {
 	err      error
 }
 
+// prReviewsLoadedMsg is a message when reviews are loaded
+type prReviewsLoadedMsg struct {
+	reviews []*models.Review
+	err     error
+}
+
 // PRDetailView is the model for the PR detail view
 type PRDetailView struct {
 	pr              *models.PullRequest
 	comments        []*models.Comment
 	commentsLoading bool
 	commentsErr     error
+	reviewsLoading  bool
+	reviewsErr      error
 	owner           string
 	repo            string
 	prRepo          repository.PullRequestRepository
@@ -61,6 +70,7 @@ type PRDetailView struct {
 // NewPRDetailView creates a new PR detail view
 func NewPRDetailView(pr *models.PullRequest, owner, repo string, prRepo repository.PullRequestRepository) *PRDetailView {
 	commentsLoading := prRepo != nil
+	reviewsLoading := prRepo != nil
 	return &PRDetailView{
 		pr:              pr,
 		owner:           owner,
@@ -70,6 +80,7 @@ func NewPRDetailView(pr *models.PullRequest, owner, repo string, prRepo reposito
 		scrollOffset:    0,
 		loading:         false,
 		commentsLoading: commentsLoading,
+		reviewsLoading:  reviewsLoading,
 		renderer:        newMarkdownRenderer(80),
 	}
 }
@@ -77,9 +88,19 @@ func NewPRDetailView(pr *models.PullRequest, owner, repo string, prRepo reposito
 // Init initializes the PR detail view
 func (m *PRDetailView) Init() tea.Cmd {
 	if m.prRepo != nil {
-		return m.loadComments()
+		var cmds []tea.Cmd
+		if m.commentsLoading {
+			cmds = append(cmds, m.loadComments())
+		}
+		if m.reviewsLoading {
+			cmds = append(cmds, m.loadReviews())
+		}
+		if len(cmds) > 0 {
+			return tea.Batch(cmds...)
+		}
 	}
 	m.commentsLoading = false
+	m.reviewsLoading = false
 	return nil
 }
 
@@ -108,6 +129,30 @@ func (m *PRDetailView) loadComments() tea.Cmd {
 	}
 }
 
+// loadReviews loads reviews for the PR
+func (m *PRDetailView) loadReviews() tea.Cmd {
+	return func() tea.Msg {
+		if m.prRepo == nil {
+			return prReviewsLoadedMsg{
+				reviews: nil,
+				err:     fmt.Errorf("PR repository not available"),
+			}
+		}
+
+		reviews, err := m.prRepo.ListReviews(
+			context.Background(),
+			m.owner,
+			m.repo,
+			m.pr.Number,
+		)
+
+		return prReviewsLoadedMsg{
+			reviews: reviews,
+			err:     err,
+		}
+	}
+}
+
 // Update handles messages
 func (m *PRDetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -126,6 +171,16 @@ func (m *PRDetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.commentsErr = nil
 			m.comments = msg.comments
+		}
+		return m, nil
+
+	case prReviewsLoadedMsg:
+		m.reviewsLoading = false
+		if msg.err != nil {
+			m.reviewsErr = msg.err
+		} else {
+			m.reviewsErr = nil
+			m.pr.Reviews = flattenReviews(msg.reviews)
 		}
 		return m, nil
 	}
@@ -368,7 +423,63 @@ func (m *PRDetailView) renderMetadata() string {
 		parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, milestoneLabel, " ", milestoneValue))
 	}
 
+	if timelineRows := m.renderReviewTimeline(); len(timelineRows) > 0 {
+		parts = append(parts, timelineRows...)
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderReviewTimeline renders metrics related to review timings
+func (m *PRDetailView) renderReviewTimeline() []string {
+	if m.pr == nil || m.pr.CreatedAt.IsZero() {
+		return nil
+	}
+
+	creationLabel := styles.MutedStyle.Render("Creation → Review:")
+	approvalLabel := styles.MutedStyle.Render("Review → Approval:")
+	join := func(label, value string) string {
+		return lipgloss.JoinHorizontal(lipgloss.Top, label, " ", value)
+	}
+
+	if m.reviewsLoading {
+		loading := styles.MutedStyle.Render("Loading reviews...")
+		return []string{
+			join(creationLabel, loading),
+			join(approvalLabel, loading),
+		}
+	}
+
+	if m.reviewsErr != nil {
+		errValue := styles.ErrorStyle.Render(fmt.Sprintf("Failed to load reviews: %v", m.reviewsErr))
+		unavailable := styles.MutedStyle.Render("Unavailable")
+		return []string{
+			join(creationLabel, errValue),
+			join(approvalLabel, unavailable),
+		}
+	}
+
+	reviewStart := firstReviewSubmittedAt(m.pr.Reviews)
+	approvalTime := firstApprovalSubmittedAt(m.pr.Reviews)
+
+	var creationValue string
+	if reviewStart != nil {
+		creationValue = renderDurationValue(m.pr.CreatedAt, *reviewStart)
+	} else {
+		creationValue = styles.MutedStyle.Render("Not reviewed yet")
+	}
+
+	var approvalValue string
+	if reviewStart != nil && approvalTime != nil {
+		approvalValue = renderDurationValue(*reviewStart, *approvalTime)
+	} else {
+		approvalValue = styles.MutedStyle.Render("Not approved yet")
+	}
+
+	return []string{
+		join(creationLabel, creationValue),
+		join(approvalLabel, approvalValue),
+	}
 }
 
 // getMergeStatus returns the merge status string
@@ -697,4 +808,104 @@ func (m *PRDetailView) renderLoading() string {
 // renderError renders an error state
 func (m *PRDetailView) renderError() string {
 	return styles.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err))
+}
+
+// renderDurationValue renders a duration and timestamp pair for timeline metrics
+func renderDurationValue(start, end time.Time) string {
+	durationText := styles.NormalStyle.Render(formatDurationBetween(start, end))
+	timestampText := styles.DateStyle.Render(formatTime(end))
+	return lipgloss.JoinHorizontal(lipgloss.Top, durationText, " ", timestampText)
+}
+
+// firstReviewSubmittedAt returns the earliest review submission time
+func firstReviewSubmittedAt(reviews []models.Review) *time.Time {
+	var earliest *time.Time
+	for _, review := range reviews {
+		if review.SubmittedAt.IsZero() {
+			continue
+		}
+		if review.State == models.ReviewStatePending {
+			continue
+		}
+		reviewTime := review.SubmittedAt
+		if earliest == nil || reviewTime.Before(*earliest) {
+			earliest = &reviewTime
+		}
+	}
+	return earliest
+}
+
+// firstApprovalSubmittedAt returns the earliest approval submission time
+func firstApprovalSubmittedAt(reviews []models.Review) *time.Time {
+	var earliest *time.Time
+	for _, review := range reviews {
+		if review.State != models.ReviewStateApproved {
+			continue
+		}
+		if review.SubmittedAt.IsZero() {
+			continue
+		}
+		reviewTime := review.SubmittedAt
+		if earliest == nil || reviewTime.Before(*earliest) {
+			earliest = &reviewTime
+		}
+	}
+	return earliest
+}
+
+// formatDurationBetween formats the duration between two timestamps
+func formatDurationBetween(start, end time.Time) string {
+	if end.Before(start) {
+		start, end = end, start
+	}
+	return formatDurationShort(end.Sub(start))
+}
+
+// formatDurationShort formats a duration into a short human readable string
+func formatDurationShort(d time.Duration) string {
+	if d <= 0 {
+		return "<1m"
+	}
+	var parts []string
+	days := d / (24 * time.Hour)
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+		d -= days * 24 * time.Hour
+	}
+	hours := d / time.Hour
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+		d -= hours * time.Hour
+	}
+	minutes := d / time.Minute
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
+		d -= minutes * time.Minute
+	}
+	if len(parts) == 0 {
+		seconds := int((d + time.Second/2) / time.Second)
+		if seconds <= 0 {
+			seconds = 1
+		}
+		parts = append(parts, fmt.Sprintf("%ds", seconds))
+	}
+	if len(parts) > 2 {
+		parts = parts[:2]
+	}
+	return strings.Join(parts, " ")
+}
+
+// flattenReviews converts review pointers to value slices
+func flattenReviews(reviews []*models.Review) []models.Review {
+	if len(reviews) == 0 {
+		return nil
+	}
+	result := make([]models.Review, 0, len(reviews))
+	for _, review := range reviews {
+		if review == nil {
+			continue
+		}
+		result = append(result, *review)
+	}
+	return result
 }
