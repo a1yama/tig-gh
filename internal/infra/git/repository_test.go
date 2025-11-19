@@ -48,6 +48,27 @@ func TestParseGitHubURL(t *testing.T) {
 			wantErr:   false,
 		},
 		{
+			name:      "HTTPS URL with authentication (token:x-oauth-basic)",
+			url:       "https://ghp_token123:x-oauth-basic@github.com/Kyash/platform-api.git",
+			wantOwner: "Kyash",
+			wantRepo:  "platform-api",
+			wantErr:   false,
+		},
+		{
+			name:      "HTTPS URL with authentication without .git",
+			url:       "https://ghp_token123:x-oauth-basic@github.com/owner/repo",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+			wantErr:   false,
+		},
+		{
+			name:      "HTTPS URL with username:password auth",
+			url:       "https://username:password@github.com/owner/repo.git",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+			wantErr:   false,
+		},
+		{
 			name:    "Invalid URL format",
 			url:     "https://gitlab.com/owner/repo.git",
 			wantErr: true,

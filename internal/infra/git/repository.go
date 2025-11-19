@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 )
@@ -22,25 +23,35 @@ func GetCurrentRepository() (owner, repo string, err error) {
 // ParseGitHubURL parses a GitHub URL and returns the owner and repository name
 // Supports both HTTPS and SSH formats:
 //   - https://github.com/owner/repo.git
+//   - https://token:x-oauth-basic@github.com/owner/repo.git (with auth)
 //   - git@github.com:owner/repo.git
-func ParseGitHubURL(url string) (owner, repo string, err error) {
-	url = strings.TrimSpace(url)
+func ParseGitHubURL(urlStr string) (owner, repo string, err error) {
+	urlStr = strings.TrimSpace(urlStr)
 
 	// Remove .git suffix if present
-	url = strings.TrimSuffix(url, ".git")
+	urlStr = strings.TrimSuffix(urlStr, ".git")
 
 	var ownerRepo string
 
-	// Handle HTTPS format: https://github.com/owner/repo
-	if strings.HasPrefix(url, "https://github.com/") {
-		ownerRepo = strings.TrimPrefix(url, "https://github.com/")
-	} else if strings.HasPrefix(url, "http://github.com/") {
-		ownerRepo = strings.TrimPrefix(url, "http://github.com/")
-	} else if strings.HasPrefix(url, "git@github.com:") {
+	// Handle HTTP/HTTPS format (with or without authentication)
+	if strings.HasPrefix(urlStr, "http://") || strings.HasPrefix(urlStr, "https://") {
+		u, err := url.Parse(urlStr)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to parse URL: %w", err)
+		}
+
+		// Check if it's GitHub
+		if u.Host != "github.com" {
+			return "", "", fmt.Errorf("not a GitHub URL: %s", urlStr)
+		}
+
+		// Extract owner/repo from path (authentication info is automatically stripped by url.Parse)
+		ownerRepo = strings.TrimPrefix(u.Path, "/")
+	} else if strings.HasPrefix(urlStr, "git@github.com:") {
 		// Handle SSH format: git@github.com:owner/repo
-		ownerRepo = strings.TrimPrefix(url, "git@github.com:")
+		ownerRepo = strings.TrimPrefix(urlStr, "git@github.com:")
 	} else {
-		return "", "", fmt.Errorf("unsupported URL format: %s", url)
+		return "", "", fmt.Errorf("unsupported URL format: %s", urlStr)
 	}
 
 	// Split owner/repo
