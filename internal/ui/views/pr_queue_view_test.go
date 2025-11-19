@@ -8,6 +8,7 @@ import (
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
+	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -155,6 +156,74 @@ func TestPRQueueView_cursorHighlightsSelection(t *testing.T) {
 
 	if first == second {
 		t.Fatal("expected view output to change when cursor moves")
+	}
+}
+
+func TestPRQueueView_highlightsFirstEntryAfterLoad(t *testing.T) {
+	view := NewPRQueueView()
+	view.width = 80
+	view.height = 20
+
+	now := time.Now()
+	msg := prQueueLoadedMsg{
+		prs: []*models.PullRequest{
+			{Number: 2, Title: "Beta", CreatedAt: now.Add(-1 * time.Hour)},
+			{Number: 1, Title: "Alpha", CreatedAt: now.Add(-2 * time.Hour)},
+		},
+	}
+
+	view.Update(msg)
+	output := view.View()
+	cursorMarker := styles.CursorStyle.Render("▶ ")
+	if !containsString(output, cursorMarker) {
+		t.Fatalf("expected output to contain the cursor marker %q, got %q", cursorMarker, output)
+	}
+}
+
+func TestPRQueueView_ViewShowsHeaderAndStatus(t *testing.T) {
+	view := NewPRQueueView()
+	view.width = 80
+	view.height = 20
+	view.owner = "owner"
+	view.repo = "repo"
+	view.reviewLoading = true
+	view.entries = []*prQueueEntry{
+		{pr: &models.PullRequest{Number: 1, Title: "Alpha", CreatedAt: time.Now().Add(-1 * time.Hour)}},
+	}
+
+	output := view.View()
+
+	if !containsString(output, "Review Queue") {
+		t.Fatalf("expected header to include %q, got %q", "Review Queue", output)
+	}
+	if !containsString(output, "Queue") {
+		t.Fatalf("expected status bar to include mode label %q, got %q", "Queue", output)
+	}
+	if !containsString(output, "owner/repo") {
+		t.Fatalf("expected status bar to include repo label, got %q", output)
+	}
+}
+
+func TestPRQueueView_resetsCursorWhenOutOfRange(t *testing.T) {
+	view := NewPRQueueView()
+	view.width = 80
+	view.height = 20
+	now := time.Now()
+	view.entries = []*prQueueEntry{
+		{pr: &models.PullRequest{Number: 1, Title: "Alpha", CreatedAt: now}},
+		{pr: &models.PullRequest{Number: 2, Title: "Beta", CreatedAt: now}},
+	}
+
+	view.cursor = 5
+	output := view.View()
+
+	if view.cursor != 0 {
+		t.Fatalf("expected cursor to reset to 0, got %d", view.cursor)
+	}
+
+	cursorMarker := styles.CursorStyle.Render("▶ ")
+	if !containsString(output, cursorMarker) {
+		t.Fatalf("expected cursor marker in output, got %q", output)
 	}
 }
 

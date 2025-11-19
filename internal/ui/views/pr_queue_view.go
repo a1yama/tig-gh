@@ -68,6 +68,7 @@ type PRQueueView struct {
 func NewPRQueueView() *PRQueueView {
 	return &PRQueueView{
 		entries:       []*prQueueEntry{},
+		cursor:        0,
 		statusBar:     components.NewStatusBar(),
 		prRepo:        nil,
 		loading:       false,
@@ -294,6 +295,9 @@ func (m *PRQueueView) View() string {
 	}
 
 	b.WriteString("\n")
+	if m.statusBar != nil && m.width > 0 {
+		m.statusBar.SetSize(m.width, 1)
+	}
 	m.updateStatusBar()
 	b.WriteString(m.statusBar.View())
 
@@ -306,7 +310,23 @@ func (m *PRQueueView) renderHeader() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, title, " ", count)
 }
 
+func (m *PRQueueView) ensureCursorVisible() {
+	if len(m.entries) == 0 {
+		m.cursor = 0
+		return
+	}
+	if m.cursor < 0 || m.cursor >= len(m.entries) {
+		m.cursor = 0
+	}
+}
+
 func (m *PRQueueView) renderQueueList() string {
+	return m.renderQueueListWithReset(false)
+}
+
+func (m *PRQueueView) renderQueueListWithReset(didReset bool) string {
+	m.ensureCursorVisible()
+
 	if len(m.entries) == 0 {
 		return styles.MutedStyle.Render("No open pull requests.")
 	}
@@ -338,13 +358,25 @@ func (m *PRQueueView) renderQueueList() string {
 		}
 	}
 
+	selectionFound := false
 	for i := startIdx; i < endIdx; i++ {
 		entry := m.entries[i]
-		b.WriteString(m.renderEntry(entry, i))
+		line := m.renderEntry(entry, i)
+		if m.cursor == i {
+			selectionFound = true
+		}
+		b.WriteString(line)
 		if i < endIdx-1 {
 			b.WriteString("\n")
 		}
 	}
+
+	if !selectionFound && len(m.entries) > 0 && !didReset {
+		// Defensive: if the cursor somehow drifted out of range, snap to the first entry and render again.
+		m.cursor = 0
+		return m.renderQueueListWithReset(true)
+	}
+
 	return b.String()
 }
 
@@ -360,7 +392,6 @@ func (m *PRQueueView) renderEntry(entry *prQueueEntry, index int) string {
 	waitingStyle := waitingDurationStyle(waitingDuration)
 	waitingLabel := waitingStyle.Render(formatDurationShort(waitingDuration))
 
-	statusText := entry.statusLabel()
 	prNum, ok := prDisplayNumber(entry.pr)
 	titleText := entry.pr.Title
 	if titleText == "" {
@@ -372,10 +403,8 @@ func (m *PRQueueView) renderEntry(entry *prQueueEntry, index int) string {
 	} else {
 		title = styles.IssueTitleStyle.Render(titleText)
 	}
-	line := lipgloss.JoinHorizontal(lipgloss.Top, waitingLabel, " • ", statusText, " • ", title)
-
-	details := m.renderEntryDetails(entry, now)
-	body := lipgloss.JoinVertical(lipgloss.Left, line, details)
+	author := styles.AuthorStyle.Render(formatAuthorHandle(entry.pr.Author))
+	line := lipgloss.JoinHorizontal(lipgloss.Top, waitingLabel, " • ", author, " • ", title)
 
 	var entryStyle lipgloss.Style
 	if selected {
@@ -383,22 +412,8 @@ func (m *PRQueueView) renderEntry(entry *prQueueEntry, index int) string {
 	} else {
 		entryStyle = lipgloss.NewStyle().Padding(0, 1)
 	}
-	body = entryStyle.Render(body)
-	return cursor + body
-}
-
-func (m *PRQueueView) renderEntryDetails(entry *prQueueEntry, now time.Time) string {
-	author := styles.AuthorStyle.Render(formatAuthorHandle(entry.pr.Author))
-	updated := styles.MutedStyle.Render(fmt.Sprintf("Updated %s ago", formatDurationShort(now.Sub(entry.pr.UpdatedAt))))
-	waitingInfo := styles.MutedStyle.Render(fmt.Sprintf("Opened %s ago", formatDurationShort(now.Sub(entry.pr.CreatedAt))))
-	reviewSummary := entry.reviewSummary()
-
-	parts := []string{author, waitingInfo, updated}
-	if reviewSummary != "" {
-		parts = append(parts, reviewSummary)
-	}
-
-	return strings.Join(parts, "  ")
+	rendered := entryStyle.Render(line)
+	return cursor + rendered
 }
 
 func (entry *prQueueEntry) reviewSummary() string {
