@@ -389,6 +389,18 @@ func (m *MetricsView) renderContentLines() []string {
 		styles.TitleStyle.Render("Lead Time Metrics"),
 	}
 
+	// 計測期間を別行で表示
+	if m.config != nil && m.config.CalculationPeriod > 0 {
+		days := int(m.config.CalculationPeriod.Hours() / 24)
+		endDate := time.Now()
+		startDate := endDate.Add(-m.config.CalculationPeriod)
+		periodLine := fmt.Sprintf("Period: %s ~ %s (%d days)",
+			startDate.Format("2006-01-02"),
+			endDate.Format("2006-01-02"),
+			days)
+		lines = append(lines, styles.MutedStyle.Render(periodLine))
+	}
+
 	// フィルタ状態を表示
 	if m.filteredRepo != "" {
 		lines = append(lines, styles.WarningStyle.Render(fmt.Sprintf("Filtered: %s", m.filteredRepo)))
@@ -461,11 +473,26 @@ func (m *MetricsView) renderContentLines() []string {
 func (m *MetricsView) renderFilterModeUI() []string {
 	lines := []string{
 		styles.TitleStyle.Render("Lead Time Metrics"),
+	}
+
+	// 計測期間を別行で表示
+	if m.config != nil && m.config.CalculationPeriod > 0 {
+		days := int(m.config.CalculationPeriod.Hours() / 24)
+		endDate := time.Now()
+		startDate := endDate.Add(-m.config.CalculationPeriod)
+		periodLine := fmt.Sprintf("Period: %s ~ %s (%d days)",
+			startDate.Format("2006-01-02"),
+			endDate.Format("2006-01-02"),
+			days)
+		lines = append(lines, styles.MutedStyle.Render(periodLine))
+	}
+
+	lines = append(lines,
 		styles.MutedStyle.Render(fmt.Sprintf("Last updated: %s", m.lastUpdated.Format("2006-01-02 15:04:05"))),
 		"",
 		styles.HeaderStyle.Render("Select Repository to Filter"),
 		"",
-	}
+	)
 
 	repoList := m.getRepositoryList()
 	if len(repoList) == 0 {
