@@ -41,18 +41,21 @@ type rateLimitFetchedMsg struct {
 
 // MetricsView はリードタイムメトリクス表示用ビュー
 type MetricsView struct {
-	useCase     LeadTimeMetricsUseCase
-	metrics     *models.LeadTimeMetrics
-	loading     bool
-	err         error
-	width       int
-	height      int
-	scroll      int
-	statusBar   *components.StatusBar
-	lastUpdated time.Time
-	rateLimit   *github.Rate // GitHub API rate limit info
-	progress    *models.MetricsProgress
-	progressCh  chan models.MetricsProgress
+	useCase           LeadTimeMetricsUseCase
+	metrics           *models.LeadTimeMetrics
+	loading           bool
+	err               error
+	width             int
+	height            int
+	scroll            int
+	statusBar         *components.StatusBar
+	lastUpdated       time.Time
+	rateLimit         *github.Rate // GitHub API rate limit info
+	progress          *models.MetricsProgress
+	progressCh        chan models.MetricsProgress
+	filterMode        bool   // フィルタモード中かどうか
+	filteredRepo      string // フィルタ中のリポジトリ（空なら全体表示）
+	selectedRepoIndex int    // フィルタモード中の選択インデックス
 }
 
 // NewMetricsView は空のメトリクスビューを返す
@@ -218,11 +221,26 @@ func (m *MetricsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *MetricsView) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// フィルタモード中の処理
+	if m.filterMode {
+		return m.handleFilterModeKey(msg)
+	}
+
+	// 通常モードの処理
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "q":
 		return m, func() tea.Msg { return MetricsExitMsg{} }
+	case "f":
+		// フィルタモードに入る
+		m.enterFilterMode()
+		return m, nil
+	case "a":
+		// 全体表示に戻る
+		m.filteredRepo = ""
+		m.scroll = 0
+		return m, nil
 	case "r":
 		if !m.loading {
 			m.loading = true
@@ -254,6 +272,67 @@ func (m *MetricsView) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *MetricsView) handleFilterModeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	repoList := m.getRepositoryList()
+	if len(repoList) == 0 {
+		m.filterMode = false
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		// フィルタモードをキャンセル
+		m.filterMode = false
+		return m, nil
+	case "j", "down":
+		// 次のリポジトリを選択
+		if m.selectedRepoIndex < len(repoList)-1 {
+			m.selectedRepoIndex++
+		}
+		return m, nil
+	case "k", "up":
+		// 前のリポジトリを選択
+		if m.selectedRepoIndex > 0 {
+			m.selectedRepoIndex--
+		}
+		return m, nil
+	case "enter":
+		// フィルタを適用
+		if m.selectedRepoIndex >= 0 && m.selectedRepoIndex < len(repoList) {
+			m.filteredRepo = repoList[m.selectedRepoIndex]
+			m.scroll = 0
+		}
+		m.filterMode = false
+		return m, nil
+	case "a":
+		// 全体表示に戻る
+		m.filteredRepo = ""
+		m.scroll = 0
+		m.filterMode = false
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m *MetricsView) enterFilterMode() {
+	m.filterMode = true
+	m.selectedRepoIndex = 0
+}
+
+func (m *MetricsView) getRepositoryList() []string {
+	if m.metrics == nil {
+		return nil
+	}
+
+	repos := make([]string, 0, len(m.metrics.ByRepository))
+	for repo := range m.metrics.ByRepository {
+		repos = append(repos, repo)
+	}
+	sort.Strings(repos)
+	return repos
 }
 
 // View は現在のUI文字列を返す
@@ -297,6 +376,11 @@ func (m *MetricsView) renderContentLines() []string {
 		styles.TitleStyle.Render("Lead Time Metrics"),
 	}
 
+	// フィルタ状態を表示
+	if m.filteredRepo != "" {
+		lines = append(lines, styles.WarningStyle.Render(fmt.Sprintf("Filtered: %s", m.filteredRepo)))
+	}
+
 	if m.lastUpdated.IsZero() {
 		lines = append(lines, styles.MutedStyle.Render("No data fetched yet. Press 'r' to load metrics."))
 	} else {
@@ -324,13 +408,53 @@ func (m *MetricsView) renderContentLines() []string {
 		return lines
 	}
 
+	// フィルタモード中はリポジトリ選択UIを表示
+	if m.filterMode {
+		return m.renderFilterModeUI()
+	}
+
 	lines = append(lines, m.renderOverallSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderStagnantPRSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderRepositorySection()...)
 	lines = append(lines, "")
-	lines = append(lines, styles.HelpStyle.Render("Controls: j/k scroll • r refresh • q back"))
+
+	// ヘルプテキストを更新
+	helpText := "Controls: j/k scroll • r refresh • f filter • a show all • q back"
+	lines = append(lines, styles.HelpStyle.Render(helpText))
+
+	return lines
+}
+
+func (m *MetricsView) renderFilterModeUI() []string {
+	lines := []string{
+		styles.TitleStyle.Render("Lead Time Metrics"),
+		styles.MutedStyle.Render(fmt.Sprintf("Last updated: %s", m.lastUpdated.Format("2006-01-02 15:04:05"))),
+		"",
+		styles.HeaderStyle.Render("Select Repository to Filter"),
+		"",
+	}
+
+	repoList := m.getRepositoryList()
+	if len(repoList) == 0 {
+		lines = append(lines, styles.MutedStyle.Render("No repositories available."))
+		return lines
+	}
+
+	for idx, repo := range repoList {
+		prefix := "  "
+		repoStyle := lipgloss.NewStyle()
+		if idx == m.selectedRepoIndex {
+			prefix = "> "
+			repoStyle = repoStyle.Foreground(lipgloss.Color("2")).Bold(true)
+		}
+		lines = append(lines, prefix+repoStyle.Render(repo))
+	}
+
+	lines = append(lines, "")
+	helpText := "Controls: j/k navigate • Enter apply filter • a show all • Esc cancel"
+	lines = append(lines, styles.HelpStyle.Render(helpText))
 
 	return lines
 }
@@ -352,19 +476,41 @@ func (m *MetricsView) renderStagnantPRSection() []string {
 		styles.HeaderStyle.Render(fmt.Sprintf("Stagnant PRs (Open > %s)", formatDuration(stagnant.Threshold))),
 	}
 
-	if stagnant.TotalStagnant == 0 {
-		lines = append(lines, styles.MutedStyle.Render("No stagnant PRs found."))
+	// フィルタリングされた滞留PRリストを作成
+	filteredPRs := stagnant.LongestWaiting
+	if m.filteredRepo != "" {
+		filteredPRs = []models.StagnantPRInfo{}
+		for _, pr := range stagnant.LongestWaiting {
+			if pr.Repository == m.filteredRepo {
+				filteredPRs = append(filteredPRs, pr)
+			}
+		}
+	}
+
+	if len(filteredPRs) == 0 {
+		if m.filteredRepo != "" {
+			lines = append(lines, styles.MutedStyle.Render(fmt.Sprintf("No stagnant PRs found for %s.", m.filteredRepo)))
+		} else {
+			lines = append(lines, styles.MutedStyle.Render("No stagnant PRs found."))
+		}
 		return lines
 	}
 
-	lines = append(lines,
-		fmt.Sprintf("Total stagnant PRs:  %d", stagnant.TotalStagnant),
-		fmt.Sprintf("Average age:         %s", formatDuration(stagnant.AverageAge)),
-	)
+	// フィルタされている場合は全体統計は表示しない
+	if m.filteredRepo == "" {
+		lines = append(lines,
+			fmt.Sprintf("Total stagnant PRs:  %d", stagnant.TotalStagnant),
+			fmt.Sprintf("Average age:         %s", formatDuration(stagnant.AverageAge)),
+		)
+	}
 
-	if len(stagnant.LongestWaiting) > 0 {
-		lines = append(lines, "Longest waiting PRs:")
-		for idx, pr := range stagnant.LongestWaiting {
+	if len(filteredPRs) > 0 {
+		if m.filteredRepo != "" {
+			lines = append(lines, fmt.Sprintf("Stagnant PRs for %s:", m.filteredRepo))
+		} else {
+			lines = append(lines, "Longest waiting PRs:")
+		}
+		for idx, pr := range filteredPRs {
 			lines = append(lines,
 				fmt.Sprintf("  %2d. %s #%d (%s): %s",
 					idx+1,
@@ -390,11 +536,25 @@ func (m *MetricsView) renderRepositorySection() []string {
 		return lines
 	}
 
+	// フィルタリングされたリポジトリリストを作成
 	repoNames := make([]string, 0, len(m.metrics.ByRepository))
-	for name := range m.metrics.ByRepository {
-		repoNames = append(repoNames, name)
+	if m.filteredRepo != "" {
+		// フィルタが有効な場合、そのリポジトリのみ表示
+		if _, exists := m.metrics.ByRepository[m.filteredRepo]; exists {
+			repoNames = append(repoNames, m.filteredRepo)
+		}
+	} else {
+		// フィルタがない場合、全リポジトリ表示
+		for name := range m.metrics.ByRepository {
+			repoNames = append(repoNames, name)
+		}
+		sort.Strings(repoNames)
 	}
-	sort.Strings(repoNames)
+
+	if len(repoNames) == 0 {
+		lines = append(lines, styles.MutedStyle.Render(fmt.Sprintf("No data available for %s.", m.filteredRepo)))
+		return lines
+	}
 
 	header := fmt.Sprintf("%-40s %12s %12s %6s", "Repository", "Avg", "Median", "PRs")
 	lines = append(lines, styles.MutedStyle.Render(header))
@@ -423,15 +583,21 @@ func (m *MetricsView) updateStatusBar() {
 
 	mode := "Metrics"
 	switch {
+	case m.filterMode:
+		mode = "Filter"
 	case m.loading:
 		mode = "Loading"
 	case m.err != nil:
 		mode = "Error"
+	case m.filteredRepo != "":
+		mode = "Filtered"
 	}
 	m.statusBar.SetMode(mode)
 
 	var status string
-	if m.loading {
+	if m.filterMode {
+		status = "Select repository to filter"
+	} else if m.loading {
 		if m.progress != nil && m.progress.TotalRepos > 0 {
 			status = fmt.Sprintf("Loading metrics... (%d/%d repositories)",
 				m.progress.ProcessedRepos,
@@ -457,8 +623,12 @@ func (m *MetricsView) updateStatusBar() {
 			status = fmt.Sprintf("%s: %s", status, errMsg)
 		}
 	} else if m.metrics != nil {
-		repoCount := len(m.metrics.ByRepository)
-		status = fmt.Sprintf("Metrics loaded • %d repositories", repoCount)
+		if m.filteredRepo != "" {
+			status = fmt.Sprintf("Filtered: %s", m.filteredRepo)
+		} else {
+			repoCount := len(m.metrics.ByRepository)
+			status = fmt.Sprintf("Metrics loaded • %d repositories", repoCount)
+		}
 
 		if m.rateLimit != nil {
 			status = fmt.Sprintf("%s • API: %d/%d remaining",
@@ -474,16 +644,27 @@ func (m *MetricsView) updateStatusBar() {
 	m.statusBar.SetMessage(status)
 
 	m.statusBar.ClearItems()
-	m.statusBar.AddItem("j/k", "scroll")
-	m.statusBar.AddItem("r", "refresh")
-	m.statusBar.AddItem("l", "rate limit")
-	m.statusBar.AddItem("q", "back")
+	if m.filterMode {
+		m.statusBar.AddItem("j/k", "navigate")
+		m.statusBar.AddItem("Enter", "apply")
+		m.statusBar.AddItem("a", "show all")
+		m.statusBar.AddItem("Esc", "cancel")
+	} else {
+		m.statusBar.AddItem("j/k", "scroll")
+		m.statusBar.AddItem("r", "refresh")
+		m.statusBar.AddItem("f", "filter")
+		if m.filteredRepo != "" {
+			m.statusBar.AddItem("a", "show all")
+		}
+		m.statusBar.AddItem("l", "rate limit")
+		m.statusBar.AddItem("q", "back")
+	}
 
-	if !m.loading && m.err == nil && !m.lastUpdated.IsZero() {
+	if !m.loading && m.err == nil && !m.lastUpdated.IsZero() && !m.filterMode {
 		m.statusBar.AddItem("Updated", m.lastUpdated.Format("15:04:05"))
 	}
 
-	if m.metrics != nil {
+	if m.metrics != nil && !m.filterMode {
 		m.statusBar.AddItem("PRs", fmt.Sprintf("%d", m.metrics.Overall.Count))
 	}
 }
