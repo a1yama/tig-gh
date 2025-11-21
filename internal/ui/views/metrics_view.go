@@ -790,7 +790,7 @@ func (m *MetricsView) renderQualityIssueList(items []qualityIssueDisplay) []stri
 	}
 
 	const (
-		repoWidth   = 18
+		repoWidth   = 31
 		numberWidth = 7
 		typeWidth   = 16
 		detailWidth = 28
@@ -802,7 +802,7 @@ func (m *MetricsView) renderQualityIssueList(items []qualityIssueDisplay) []stri
 		numberWidth, "#",
 		typeWidth, "Type",
 		detailWidth, "Details",
-		"Recommendation",
+		"Title",
 	)
 
 	lines := []string{styles.MutedStyle.Render(header)}
@@ -818,7 +818,10 @@ func (m *MetricsView) renderQualityIssueList(items []qualityIssueDisplay) []stri
 		if details == "" {
 			details = "-"
 		}
-		recommendation := normalizeRecommendation(entry.issue.Recommendation)
+		title := entry.issue.Title
+		if title == "" {
+			title = "-"
+		}
 
 		row := fmt.Sprintf(
 			"%-*s %-*s %-*s %-*s %s",
@@ -826,7 +829,7 @@ func (m *MetricsView) renderQualityIssueList(items []qualityIssueDisplay) []stri
 			numberWidth, number,
 			typeWidth, issueType,
 			detailWidth, details,
-			recommendation,
+			title,
 		)
 		lines = append(lines, row)
 	}
@@ -855,6 +858,21 @@ func trimColumnText(value string, width int) string {
 		return string(runes[:width])
 	}
 	return string(runes[:width-3]) + "..."
+}
+
+func trimColumnTextFromEnd(value string, width int) string {
+	value = singleLineText(value)
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width <= 3 {
+		return string(runes[len(runes)-width:])
+	}
+	return "..." + string(runes[len(runes)-(width-3):])
 }
 
 func normalizeRecommendation(value string) string {
