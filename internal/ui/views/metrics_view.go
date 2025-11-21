@@ -464,9 +464,24 @@ func (m *MetricsView) renderFilterModeUI() []string {
 }
 
 func (m *MetricsView) renderOverallSection() []string {
+	header := "Overall Metrics"
 	stat := m.metrics.Overall
+
+	// フィルタリングされている場合は該当リポジトリの統計を使用
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("Overall Metrics (Filtered: %s)", m.filteredRepo)
+		if repoStat, ok := m.metrics.ByRepository[m.filteredRepo]; ok {
+			stat = repoStat
+		} else {
+			return []string{
+				styles.HeaderStyle.Render(header),
+				styles.MutedStyle.Render(fmt.Sprintf("No data available for %s.", m.filteredRepo)),
+			}
+		}
+	}
+
 	lines := []string{
-		styles.HeaderStyle.Render("Overall Metrics"),
+		styles.HeaderStyle.Render(header),
 		fmt.Sprintf("Average: %s", formatDuration(stat.Average)),
 		fmt.Sprintf("Median: %s", formatDuration(stat.Median)),
 		fmt.Sprintf("Total PRs: %d", stat.Count),
