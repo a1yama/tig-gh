@@ -258,26 +258,28 @@ func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repo
 		}, nil
 	}
 
-	var longest *models.StagnantPRInfo
 	var totalAge time.Duration
-
 	for i := range allStagnantPRs {
-		pr := &allStagnantPRs[i]
-		totalAge += pr.Age
-
-		if longest == nil || pr.Age > longest.Age {
-			longest = pr
-		}
+		totalAge += allStagnantPRs[i].Age
 	}
+
+	sort.Slice(allStagnantPRs, func(i, j int) bool {
+		return allStagnantPRs[i].Age > allStagnantPRs[j].Age
+	})
+
+	topCount := 10
+	if len(allStagnantPRs) < topCount {
+		topCount = len(allStagnantPRs)
+	}
+	longestWaiting := append([]models.StagnantPRInfo(nil), allStagnantPRs[:topCount]...)
 
 	return models.StagnantPRMetrics{
 		Threshold:      stagnantPRThreshold,
 		TotalStagnant:  len(allStagnantPRs),
 		AverageAge:     time.Duration(int64(totalAge) / int64(len(allStagnantPRs))),
-		LongestWaiting: longest,
+		LongestWaiting: longestWaiting,
 	}, nil
 }
-
 
 func parseRepositorySlug(slug string) (string, string, error) {
 	parts := strings.Split(slug, "/")
@@ -362,4 +364,3 @@ func (r *MetricsRepositoryImpl) getDefaultBranch(ctx context.Context, owner, rep
 
 	return branch, nil
 }
-

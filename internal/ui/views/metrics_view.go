@@ -362,14 +362,19 @@ func (m *MetricsView) renderStagnantPRSection() []string {
 		fmt.Sprintf("Average age:         %s", formatDuration(stagnant.AverageAge)),
 	)
 
-	if stagnant.LongestWaiting != nil {
-		lines = append(lines,
-			fmt.Sprintf("Longest waiting:     %s (%s #%d)",
-				formatDuration(stagnant.LongestWaiting.Age),
-				stagnant.LongestWaiting.Repository,
-				stagnant.LongestWaiting.Number,
-			),
-		)
+	if len(stagnant.LongestWaiting) > 0 {
+		lines = append(lines, "Longest waiting PRs:")
+		for idx, pr := range stagnant.LongestWaiting {
+			lines = append(lines,
+				fmt.Sprintf("  %2d. %s #%d (%s): %s",
+					idx+1,
+					pr.Repository,
+					pr.Number,
+					formatDuration(pr.Age),
+					pr.Title,
+				),
+			)
+		}
 	}
 
 	return lines

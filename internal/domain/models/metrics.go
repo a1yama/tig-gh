@@ -44,10 +44,10 @@ type StagnantPRInfo struct {
 
 // StagnantPRMetrics は滞留PR（長期間オープン）の統計
 type StagnantPRMetrics struct {
-	Threshold      time.Duration   `json:"threshold"`       // 滞留判定のしきい値（例: 72時間）
-	TotalStagnant  int             `json:"total_stagnant"`  // 滞留PR総数
-	AverageAge     time.Duration   `json:"average_age"`     // 滞留PRの平均経過時間
-	LongestWaiting *StagnantPRInfo `json:"longest_waiting"` // 最も古い滞留PR
+	Threshold      time.Duration    `json:"threshold"`       // 滞留判定のしきい値（例: 72時間）
+	TotalStagnant  int              `json:"total_stagnant"`  // 滞留PR総数
+	AverageAge     time.Duration    `json:"average_age"`     // 滞留PRの平均経過時間
+	LongestWaiting []StagnantPRInfo `json:"longest_waiting"` // 最も古い滞留PR一覧
 }
 
 // AlertType はアラートの種類を表す
