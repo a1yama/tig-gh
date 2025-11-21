@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
@@ -137,6 +138,13 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 	result.Overall = calculateLeadTimeStat(allDurations)
 	result.ByDayOfWeek = aggregateByDayOfWeek(overallSamples)
 	result.WeeklyComparison = calculateWeeklyComparison(overallSamples, currentTime)
+
+	qualityIssues, qualityErr := r.analyzeOpenPRQuality(ctx, repos)
+	if qualityErr != nil {
+		fmt.Printf("failed to analyze PR quality: %v\n", qualityErr)
+	} else {
+		result.QualityIssues = qualityIssues
+	}
 
 	// Fetch stagnant PR metrics
 	stagnantMetrics, err := r.fetchStagnantPRMetrics(ctx, repos, time.Now())
@@ -398,6 +406,201 @@ func calculatePercentChange(current, previous int) float64 {
 	}
 
 	return (float64(current-previous) / float64(previous)) * 100
+}
+
+type scoredQualityIssue struct {
+	issue models.PRQualityIssue
+	score int
+}
+
+func (r *MetricsRepositoryImpl) analyzeOpenPRQuality(ctx context.Context, repos []string) (models.PRQualityIssues, error) {
+	var collected []scoredQualityIssue
+
+	for _, repoSlug := range repos {
+		repoSlug = strings.TrimSpace(repoSlug)
+		if repoSlug == "" {
+			continue
+		}
+
+		owner, repo, err := parseRepositorySlug(repoSlug)
+		if err != nil {
+			continue
+		}
+
+		opts := &github.PullRequestListOptions{
+			State:     "open",
+			Sort:      "updated",
+			Direction: "desc",
+			ListOptions: github.ListOptions{
+				PerPage: 50,
+			},
+		}
+
+		for {
+			if err := ctx.Err(); err != nil {
+				return models.PRQualityIssues{}, err
+			}
+
+			prs, resp, err := r.client.client.PullRequests.List(ctx, owner, repo, opts)
+			if err != nil {
+				return models.PRQualityIssues{}, handleGitHubError(err, resp)
+			}
+
+			for _, pr := range prs {
+				if pr == nil {
+					continue
+				}
+				collected = append(collected, collectQualityIssuesForPR(repoSlug, pr)...)
+			}
+
+			if resp == nil || resp.NextPage == 0 {
+				break
+			}
+			opts.Page = resp.NextPage
+		}
+	}
+
+	if len(collected) == 0 {
+		return models.PRQualityIssues{}, nil
+	}
+
+	sort.Slice(collected, func(i, j int) bool {
+		si := severityWeight(collected[i].issue.Severity)
+		sj := severityWeight(collected[j].issue.Severity)
+		if si != sj {
+			return si < sj
+		}
+		if collected[i].score != collected[j].score {
+			return collected[i].score > collected[j].score
+		}
+		if collected[i].issue.Repository != collected[j].issue.Repository {
+			return collected[i].issue.Repository < collected[j].issue.Repository
+		}
+		return collected[i].issue.Number < collected[j].issue.Number
+	})
+
+	limit := 10
+	if len(collected) < limit {
+		limit = len(collected)
+	}
+
+	issues := make([]models.PRQualityIssue, 0, limit)
+	for i := 0; i < limit; i++ {
+		issues = append(issues, collected[i].issue)
+	}
+
+	return models.PRQualityIssues{Issues: issues}, nil
+}
+
+func collectQualityIssuesForPR(repoSlug string, pr *github.PullRequest) []scoredQualityIssue {
+	lines := pr.GetAdditions() + pr.GetDeletions()
+	files := pr.GetChangedFiles()
+	commits := pr.GetCommits()
+	body := strings.TrimSpace(pr.GetBody())
+	bodyLength := utf8.RuneCountInString(body)
+	details := formatQualityDetails(lines, files, commits)
+
+	var issues []scoredQualityIssue
+
+	addIssue := func(issueType, severity, reason, recommendation string) {
+		issue := models.PRQualityIssue{
+			Repository:     repoSlug,
+			Number:         pr.GetNumber(),
+			Title:          pr.GetTitle(),
+			IssueType:      issueType,
+			Severity:       severity,
+			Reason:         reason,
+			Recommendation: recommendation,
+			Details:        details,
+		}
+		score := calculateQualityImpact(issueType, lines, files, commits)
+		collectedIssue := scoredQualityIssue{
+			issue: issue,
+			score: score,
+		}
+		issues = append(issues, collectedIssue)
+	}
+
+	if lines >= 500 {
+		addIssue(
+			"large_pr",
+			"high",
+			"レビューに時間がかかり、バグが見落とされやすい",
+			"機能ごとに分割し、200-400行に抑える",
+		)
+	}
+
+	if body == "" {
+		addIssue(
+			"no_description",
+			"high",
+			"レビュアーが変更意図を理解できない",
+			"「何を」「なぜ」「どうテストしたか」を記載",
+		)
+	} else if bodyLength > 0 && bodyLength < 50 {
+		addIssue(
+			"short_description",
+			"medium",
+			"テンプレートのままの可能性",
+			"変更の背景と影響範囲を追記",
+		)
+	}
+
+	if commits >= 15 {
+		addIssue(
+			"many_commits",
+			"medium",
+			"レビュー時の変更履歴が追いづらい",
+			"関連するコミットをsquashして整理",
+		)
+	}
+
+	if commits == 1 && lines >= 500 {
+		addIssue(
+			"large_single_commit",
+			"medium",
+			"レビュー時に変更の流れが分からない",
+			"論理的な単位でコミットを分ける",
+		)
+	}
+
+	return issues
+}
+
+func severityWeight(severity string) int {
+	if strings.EqualFold(severity, "high") {
+		return 0
+	}
+	return 1
+}
+
+func calculateQualityImpact(issueType string, lines, files, commits int) int {
+	impact := lines
+	if impact == 0 {
+		impact = files * 25
+	}
+	if impact == 0 {
+		impact = commits * 20
+	}
+
+	switch issueType {
+	case "many_commits":
+		impact += commits * 20
+	case "large_single_commit":
+		impact += 200
+	case "no_description", "short_description":
+		impact += (files + commits) * 10
+	}
+
+	return impact
+}
+
+func formatQualityDetails(lines, files, commits int) string {
+	details := fmt.Sprintf("%d lines, %d files", lines, files)
+	if commits > 0 {
+		details = fmt.Sprintf("%s, %d commits", details, commits)
+	}
+	return details
 }
 
 func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repos []string, now time.Time) (models.StagnantPRMetrics, error) {

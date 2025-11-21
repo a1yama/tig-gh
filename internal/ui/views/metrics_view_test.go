@@ -95,6 +95,8 @@ func TestMetricsViewViewContainsSections(t *testing.T) {
 	assertContains(t, output, "Overall Metrics")
 	assertContains(t, output, "Per Repository")
 	assertContains(t, output, "owner/repo-a")
+	assertContains(t, output, "PR Quality Issues (Top 10)")
+	assertContains(t, output, "High Priority:")
 }
 
 func TestMetricsViewErrorState(t *testing.T) {
@@ -169,6 +171,30 @@ func sampleMetrics() *models.LeadTimeMetrics {
 			{Period: "2025-W01", AverageLeadTime: 24 * time.Hour, PRCount: 4},
 			{Period: "2025-W02", AverageLeadTime: 48 * time.Hour, PRCount: 5},
 			{Period: "2025-W03", AverageLeadTime: 12 * time.Hour, PRCount: 3},
+		},
+		QualityIssues: models.PRQualityIssues{
+			Issues: []models.PRQualityIssue{
+				{
+					Repository:     "owner/repo-a",
+					Number:         101,
+					Title:          "Add big feature",
+					IssueType:      "large_pr",
+					Severity:       "high",
+					Reason:         "レビューに時間がかかり、バグが見落とされやすい",
+					Recommendation: "機能ごとに分割し、200-400行に抑える",
+					Details:        "800 lines, 12 files",
+				},
+				{
+					Repository:     "owner/repo-b",
+					Number:         202,
+					Title:          "Cleanup",
+					IssueType:      "short_description",
+					Severity:       "medium",
+					Reason:         "テンプレートのままの可能性",
+					Recommendation: "変更の背景と影響範囲を追記",
+					Details:        "120 lines, 3 files",
+				},
+			},
 		},
 	}
 }

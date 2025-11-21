@@ -419,6 +419,8 @@ func (m *MetricsView) renderContentLines() []string {
 	lines = append(lines, "")
 	lines = append(lines, m.renderWeeklyComparisonSection()...)
 	lines = append(lines, "")
+	lines = append(lines, m.renderPRQualitySection()...)
+	lines = append(lines, "")
 	lines = append(lines, m.renderStagnantPRSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderRepositorySection()...)
@@ -636,6 +638,83 @@ func (m *MetricsView) renderWeeklyComparisonSection() []string {
 	changeLine := fmt.Sprintf("%-25s %s %s", col1, col2Colored, col3Colored)
 	lines = append(lines, changeLine)
 
+	return lines
+}
+
+type qualityIssueDisplay struct {
+	index int
+	issue models.PRQualityIssue
+}
+
+func (m *MetricsView) renderPRQualitySection() []string {
+	lines := []string{
+		styles.HeaderStyle.Render("PR Quality Issues (Top 10)"),
+	}
+
+	issues := m.metrics.QualityIssues.Issues
+	if len(issues) == 0 {
+		lines = append(lines, styles.MutedStyle.Render("No PR quality issues detected."))
+		return lines
+	}
+
+	filtered := issues
+	if m.filteredRepo != "" {
+		filtered = make([]models.PRQualityIssue, 0, len(issues))
+		for _, issue := range issues {
+			if issue.Repository == m.filteredRepo {
+				filtered = append(filtered, issue)
+			}
+		}
+		if len(filtered) == 0 {
+			lines = append(lines, styles.MutedStyle.Render(fmt.Sprintf("No PR quality issues found for %s.", m.filteredRepo)))
+			return lines
+		}
+	}
+
+	var high, medium []qualityIssueDisplay
+	for idx, issue := range filtered {
+		entry := qualityIssueDisplay{
+			index: idx + 1,
+			issue: issue,
+		}
+		if strings.EqualFold(issue.Severity, "high") {
+			high = append(high, entry)
+		} else {
+			medium = append(medium, entry)
+		}
+	}
+
+	if len(high) > 0 {
+		lines = append(lines, "High Priority:")
+		lines = append(lines, m.renderQualityIssueList(high)...)
+	}
+
+	if len(medium) > 0 {
+		if len(high) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "Medium Priority:")
+		lines = append(lines, m.renderQualityIssueList(medium)...)
+	}
+
+	return lines
+}
+
+func (m *MetricsView) renderQualityIssueList(items []qualityIssueDisplay) []string {
+	var lines []string
+	for i, entry := range items {
+		detail := entry.issue.Details
+		header := fmt.Sprintf("  %d. %s #%d", entry.index, entry.issue.Repository, entry.issue.Number)
+		if detail != "" {
+			header = fmt.Sprintf("%s (%s)", header, detail)
+		}
+		lines = append(lines, header)
+		lines = append(lines, fmt.Sprintf("     ⚠️  %s", entry.issue.Reason))
+		lines = append(lines, fmt.Sprintf("     💡 %s", entry.issue.Recommendation))
+		if i < len(items)-1 {
+			lines = append(lines, "")
+		}
+	}
 	return lines
 }
 
@@ -867,10 +946,10 @@ func applyChangeColor(paddedStr string, value float64) string {
 
 func applyChangeColorANSI(text string, value float64) string {
 	const (
-		reset  = "\033[0m"
-		green  = "\033[32;1m" // bold green
-		red    = "\033[31;1m" // bold red
-		gray   = "\033[90m"   // dark gray
+		reset = "\033[0m"
+		green = "\033[32;1m" // bold green
+		red   = "\033[31;1m" // bold red
+		gray  = "\033[90m"   // dark gray
 	)
 
 	switch {

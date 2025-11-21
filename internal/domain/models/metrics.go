@@ -14,6 +14,7 @@ type LeadTimeMetrics struct {
 	ByRepositoryDayOfWeek map[string]map[time.Weekday]DayOfWeekStats `json:"by_repository_day_of_week"`
 	WeeklyComparison      WeeklyComparison                           `json:"weekly_comparison"`
 	ByRepositoryWeekly    map[string]WeeklyComparison                `json:"by_repository_weekly"`
+	QualityIssues         PRQualityIssues                            `json:"quality_issues"`
 }
 
 // LeadTimeStat は単一リポジトリまたは全体の統計値
@@ -74,6 +75,23 @@ type Alert struct {
 // AlertMetrics はアラート情報の集合
 type AlertMetrics struct {
 	Alerts []Alert `json:"alerts"` // アラートのリスト
+}
+
+// PRQualityIssue はPR品質に関する検出結果を表す
+type PRQualityIssue struct {
+	Repository     string `json:"repository"`
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	IssueType      string `json:"issue_type"`
+	Severity       string `json:"severity"`
+	Reason         string `json:"reason"`
+	Recommendation string `json:"recommendation"`
+	Details        string `json:"details"`
+}
+
+// PRQualityIssues はPR品質問題の一覧
+type PRQualityIssues struct {
+	Issues []PRQualityIssue `json:"issues"`
 }
 
 // DayOfWeekStats は曜日ごとのマージ/レビュー件数
