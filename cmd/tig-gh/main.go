@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/a1yama/tig-gh/internal/app/usecase"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/infra/cache"
@@ -14,6 +13,7 @@ import (
 	"github.com/a1yama/tig-gh/internal/infra/git"
 	"github.com/a1yama/tig-gh/internal/infra/github"
 	"github.com/a1yama/tig-gh/internal/ui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 var Version = "dev"
@@ -122,6 +122,7 @@ func main() {
 	basePRRepo := github.NewPullRequestRepository(githubClient)
 	commitRepo := github.NewCommitRepository(githubClient)
 	searchRepo := github.NewSearchRepository(githubClient)
+	metricsRepo := github.NewMetricsRepository(githubClient)
 
 	// キャッシュでラップ
 	var issueRepo repository.IssueRepository
@@ -141,6 +142,7 @@ func main() {
 	fetchPRsUseCase := usecase.NewFetchPRsUseCase(prRepo)
 	fetchCommitsUseCase := usecase.NewFetchCommitsUseCase(commitRepo)
 	searchUseCase := usecase.NewSearchUseCase(searchRepo)
+	fetchMetricsUseCase := usecase.NewFetchLeadTimeMetricsUseCase(metricsRepo, cfg)
 
 	// TUIアプリケーションの初期化
 	app := ui.NewAppWithUseCases(
@@ -148,6 +150,7 @@ func main() {
 		fetchPRsUseCase,
 		fetchCommitsUseCase,
 		searchUseCase,
+		fetchMetricsUseCase,
 		owner,
 		repo,
 	)

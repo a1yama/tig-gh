@@ -4,9 +4,10 @@ import "time"
 
 // Config はアプリケーション全体の設定を表す
 type Config struct {
-	GitHub GitHubConfig `mapstructure:"github" yaml:"github"`
-	UI     UIConfig     `mapstructure:"ui" yaml:"ui"`
-	Cache  CacheConfig  `mapstructure:"cache" yaml:"cache"`
+	GitHub  GitHubConfig  `mapstructure:"github" yaml:"github"`
+	UI      UIConfig      `mapstructure:"ui" yaml:"ui"`
+	Cache   CacheConfig   `mapstructure:"cache" yaml:"cache"`
+	Metrics MetricsConfig `mapstructure:"metrics" yaml:"metrics"`
 }
 
 // GitHubConfig はGitHub関連の設定を表す
@@ -32,6 +33,21 @@ type GitHubConfig struct {
 
 	// RateLimitBuffer はレート制限のバッファ（残りリクエスト数がこれ以下の場合は待機）
 	RateLimitBuffer int `mapstructure:"rate_limit_buffer" yaml:"rate_limit_buffer"`
+
+	// Repositories はメトリクス計算対象となるリポジトリ一覧（owner/repo形式）
+	Repositories []string `mapstructure:"repositories" yaml:"repositories"`
+}
+
+// MetricsConfig はメトリクス関連の設定を表す
+type MetricsConfig struct {
+	// Enabled はメトリクス機能全体の有効/無効
+	Enabled bool `mapstructure:"enabled" yaml:"enabled"`
+
+	// LeadTimeEnabled はリードタイム計測の有効/無効
+	LeadTimeEnabled bool `mapstructure:"lead_time_enabled" yaml:"lead_time_enabled"`
+
+	// CalculationPeriod はメトリクス計算対象期間
+	CalculationPeriod time.Duration `mapstructure:"calculation_period" yaml:"calculation_period"`
 }
 
 // UIConfig はUI関連の設定を表す
@@ -84,33 +100,34 @@ func DefaultConfig() *Config {
 			UploadBaseURL:   "https://uploads.github.com/",
 			RequestTimeout:  30 * time.Second,
 			RateLimitBuffer: 10,
+			Repositories:    []string{},
 		},
 		UI: UIConfig{
 			Theme:       "auto",
 			DefaultView: "issues",
 			KeyBindings: map[string]string{
-				"quit":        "q",
-				"up":          "k",
-				"down":        "j",
-				"select":      "enter",
-				"back":        "esc",
-				"refresh":     "r",
-				"search":      "/",
-				"filter":      "f",
-				"help":        "?",
-				"next_view":   "tab",
-				"prev_view":   "shift+tab",
-				"first_item":  "g",
-				"last_item":   "G",
-				"page_up":     "ctrl+u",
-				"page_down":   "ctrl+d",
-				"new_issue":   "n",
-				"edit":        "e",
-				"comment":     "c",
-				"assign":      "a",
-				"label":       "l",
-				"close":       "x",
-				"open":        "o",
+				"quit":       "q",
+				"up":         "k",
+				"down":       "j",
+				"select":     "enter",
+				"back":       "esc",
+				"refresh":    "r",
+				"search":     "/",
+				"filter":     "f",
+				"help":       "?",
+				"next_view":  "tab",
+				"prev_view":  "shift+tab",
+				"first_item": "g",
+				"last_item":  "G",
+				"page_up":    "ctrl+u",
+				"page_down":  "ctrl+d",
+				"new_issue":  "n",
+				"edit":       "e",
+				"comment":    "c",
+				"assign":     "a",
+				"label":      "l",
+				"close":      "x",
+				"open":       "o",
 			},
 			PageSize:   50,
 			ShowIcons:  true,
@@ -119,9 +136,14 @@ func DefaultConfig() *Config {
 		Cache: CacheConfig{
 			Enabled:      true,
 			TTL:          15 * time.Minute,
-			Dir:          "", // will be set to ~/.cache/tig-gh
+			Dir:          "",                // will be set to ~/.cache/tig-gh
 			MaxSize:      100 * 1024 * 1024, // 100MB
 			UseFileCache: true,
+		},
+		Metrics: MetricsConfig{
+			Enabled:           false,
+			LeadTimeEnabled:   false,
+			CalculationPeriod: 30 * 24 * time.Hour,
 		},
 	}
 }
@@ -140,6 +162,9 @@ func (c *Config) Validate() error {
 
 	if c.GitHub.RateLimitBuffer < 0 {
 		c.GitHub.RateLimitBuffer = 10
+	}
+	if c.GitHub.Repositories == nil {
+		c.GitHub.Repositories = []string{}
 	}
 
 	// UI設定の検証
@@ -166,6 +191,11 @@ func (c *Config) Validate() error {
 
 	if c.Cache.MaxSize <= 0 {
 		c.Cache.MaxSize = 100 * 1024 * 1024 // 100MB
+	}
+
+	// Metrics 設定の検証
+	if c.Metrics.CalculationPeriod <= 0 {
+		c.Metrics.CalculationPeriod = 30 * 24 * time.Hour
 	}
 
 	return nil

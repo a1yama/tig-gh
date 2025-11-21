@@ -18,6 +18,7 @@ const (
 	CommitListView
 	SearchView
 	ReviewQueueView
+	MetricsView
 )
 
 // App is the main application model
@@ -28,10 +29,12 @@ type App struct {
 	prQueueView         tea.Model
 	commitView          tea.Model
 	searchView          tea.Model
+	metricsView         tea.Model
 	fetchIssuesUseCase  *usecase.FetchIssuesUseCase
 	fetchPRsUseCase     *usecase.FetchPRsUseCase
 	fetchCommitsUseCase *usecase.FetchCommitsUseCase
 	searchUseCase       *usecase.SearchUseCase
+	fetchMetricsUseCase *usecase.FetchLeadTimeMetricsUseCase
 	owner               string
 	repo                string
 	width               int
@@ -42,19 +45,23 @@ type App struct {
 	prQueueViewInited   bool
 	commitViewInited    bool
 	searchViewInited    bool
+	metricsViewInited   bool
+	lastPrimaryView     ViewType
 }
 
 // NewApp creates a new application instance (for backward compatibility)
 func NewApp() *App {
 	return &App{
-		currentView: IssueListView,
-		issueView:   views.NewIssueView(),
-		prView:      views.NewPRView(),
-		prQueueView: views.NewPRQueueView(),
-		commitView:  views.NewCommitView(),
-		owner:       "",
-		repo:        "",
-		ready:       false,
+		currentView:     IssueListView,
+		issueView:       views.NewIssueView(),
+		prView:          views.NewPRView(),
+		prQueueView:     views.NewPRQueueView(),
+		commitView:      views.NewCommitView(),
+		metricsView:     views.NewMetricsView(),
+		owner:           "",
+		repo:            "",
+		ready:           false,
+		lastPrimaryView: IssueListView,
 	}
 }
 
@@ -64,6 +71,7 @@ func NewAppWithUseCases(
 	fetchPRsUseCase *usecase.FetchPRsUseCase,
 	fetchCommitsUseCase *usecase.FetchCommitsUseCase,
 	searchUseCase *usecase.SearchUseCase,
+	fetchMetricsUseCase *usecase.FetchLeadTimeMetricsUseCase,
 	owner, repo string,
 ) *App {
 	return &App{
@@ -73,13 +81,16 @@ func NewAppWithUseCases(
 		prQueueView:         views.NewPRQueueViewWithUseCase(fetchPRsUseCase, owner, repo),
 		commitView:          views.NewCommitViewWithUseCase(fetchCommitsUseCase, owner, repo),
 		searchView:          views.NewSearchViewWithUseCase(searchUseCase, owner, repo),
+		metricsView:         views.NewMetricsViewWithUseCase(fetchMetricsUseCase),
 		fetchIssuesUseCase:  fetchIssuesUseCase,
 		fetchPRsUseCase:     fetchPRsUseCase,
 		fetchCommitsUseCase: fetchCommitsUseCase,
 		searchUseCase:       searchUseCase,
+		fetchMetricsUseCase: fetchMetricsUseCase,
 		owner:               owner,
 		repo:                repo,
 		ready:               false,
+		lastPrimaryView:     IssueListView,
 	}
 }
 
@@ -95,6 +106,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case views.MetricsExitMsg:
+		if a.currentView == MetricsView {
+			a.currentView = a.lastPrimaryView
+		}
+		return a, nil
+
 	case tea.KeyMsg:
 		// Check if we're in search view with input focused
 		// If so, skip global key bindings except for special cases
@@ -145,6 +162,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
+		case "m":
+			if a.currentView != MetricsView {
+				a.lastPrimaryView = a.currentView
+			}
+			a.currentView = MetricsView
+			if !a.metricsViewInited {
+				a.metricsViewInited = true
+				return a, a.metricsView.Init()
+			}
+			return a, nil
+
 		case "c":
 			// Switch to commit view
 			a.currentView = CommitListView
@@ -189,6 +217,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.searchView, cmd = a.searchView.Update(msg)
 		cmds = append(cmds, cmd)
 
+		a.metricsView, cmd = a.metricsView.Update(msg)
+		cmds = append(cmds, cmd)
+
 		return a, tea.Batch(cmds...)
 
 	default:
@@ -220,6 +251,10 @@ func (a *App) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SearchView:
 		a.searchView, cmd = a.searchView.Update(msg)
+		return a, cmd
+
+	case MetricsView:
+		a.metricsView, cmd = a.metricsView.Update(msg)
 		return a, cmd
 
 	default:
@@ -260,6 +295,9 @@ func (a *App) View() string {
 
 	case SearchView:
 		return a.searchView.View()
+
+	case MetricsView:
+		return a.metricsView.View()
 
 	default:
 		return "Unknown view"

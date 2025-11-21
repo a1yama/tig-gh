@@ -94,6 +94,27 @@ func TestGetNotificationViewKeyBindings(t *testing.T) {
 	}
 }
 
+func TestGetMetricsViewKeyBindings(t *testing.T) {
+	kb := GetMetricsViewKeyBindings()
+
+	if kb == nil {
+		t.Fatal("GetMetricsViewKeyBindings() returned nil")
+	}
+
+	required := []string{
+		ActionMetricsScrollDown,
+		ActionMetricsScrollUp,
+		ActionMetricsRefresh,
+		ActionMetricsBack,
+	}
+
+	for _, action := range required {
+		if _, ok := kb.GetBinding(action); !ok {
+			t.Errorf("required metrics action %q not found", action)
+		}
+	}
+}
+
 func TestMergeKeyBindings(t *testing.T) {
 	base := DefaultKeyBindings()
 	issue := GetIssueViewKeyBindings()
@@ -182,6 +203,12 @@ func TestViewActionConstants(t *testing.T) {
 		{"ActionMarkRead", ActionMarkRead},
 		{"ActionMarkAllRead", ActionMarkAllRead},
 		{"ActionUnsubscribe", ActionUnsubscribe},
+
+		// Metrics actions
+		{"ActionMetricsScrollDown", ActionMetricsScrollDown},
+		{"ActionMetricsScrollUp", ActionMetricsScrollUp},
+		{"ActionMetricsRefresh", ActionMetricsRefresh},
+		{"ActionMetricsBack", ActionMetricsBack},
 	}
 
 	for _, tt := range tests {
@@ -199,6 +226,7 @@ func TestViewKeyBindings_NoConflict(t *testing.T) {
 	prKB := GetPRViewKeyBindings()
 	commitKB := GetCommitViewKeyBindings()
 	notifKB := GetNotificationViewKeyBindings()
+	metricsKB := GetMetricsViewKeyBindings()
 
 	allActions := make(map[string]string)
 
@@ -229,5 +257,12 @@ func TestViewKeyBindings_NoConflict(t *testing.T) {
 			t.Errorf("action %q conflicts between %s and notification views", action, view)
 		}
 		allActions[action] = "notification"
+	}
+
+	for action := range metricsKB.bindings {
+		if view, exists := allActions[action]; exists {
+			t.Errorf("action %q conflicts between %s and metrics views", action, view)
+		}
+		allActions[action] = "metrics"
 	}
 }

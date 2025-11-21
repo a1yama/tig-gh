@@ -25,6 +25,22 @@ github:
   # レート制限のバッファ（残りリクエスト数がこれ以下の場合は待機）
   rate_limit_buffer: 10
 
+  # メトリクス計測対象の追加リポジトリ (owner/repo 形式)
+  repositories:
+    - owner1/repo1
+    - owner2/repo2
+
+# メトリクス関連の設定
+metrics:
+  # メトリクス機能の有効/無効
+  enabled: true
+
+  # リードタイム計測の有効/無効
+  lead_time_enabled: true
+
+  # データ取得期間 (例: 720h=30日, 2160h=90日)
+  calculation_period: 720h
+
 # UI関連の設定
 ui:
   # カラーテーマ: "light", "dark", "auto"

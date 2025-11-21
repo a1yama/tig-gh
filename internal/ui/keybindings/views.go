@@ -69,6 +69,21 @@ const (
 	ActionUnsubscribe = "unsubscribe"
 )
 
+// MetricsViewActions はメトリクスビュー固有のアクション名を定義する
+const (
+	// ActionMetricsScrollDown は前方スクロール
+	ActionMetricsScrollDown = "metrics_scroll_down"
+
+	// ActionMetricsScrollUp は後方スクロール
+	ActionMetricsScrollUp = "metrics_scroll_up"
+
+	// ActionMetricsRefresh はメトリクス再取得
+	ActionMetricsRefresh = "metrics_refresh"
+
+	// ActionMetricsBack は前のビューへ戻る操作
+	ActionMetricsBack = "metrics_back"
+)
+
 // GetIssueViewKeyBindings はIssueビュー固有のキーバインディングを返す
 func GetIssueViewKeyBindings() *KeyBindings {
 	kb := NewKeyBindings()
@@ -239,6 +254,44 @@ func GetNotificationViewKeyBindings() *KeyBindings {
 	}
 
 	for _, binding := range notificationBindings {
+		kb.bindings[binding.Action] = binding
+	}
+
+	return kb
+}
+
+// GetMetricsViewKeyBindings はメトリクスビュー固有のキーバインディングを返す
+func GetMetricsViewKeyBindings() *KeyBindings {
+	kb := NewKeyBindings()
+
+	bindings := []KeyBinding{
+		{
+			Keys:        []string{"j", "down"},
+			Action:      ActionMetricsScrollDown,
+			Description: "下にスクロール",
+			Category:    "metrics",
+		},
+		{
+			Keys:        []string{"k", "up"},
+			Action:      ActionMetricsScrollUp,
+			Description: "上にスクロール",
+			Category:    "metrics",
+		},
+		{
+			Keys:        []string{"r"},
+			Action:      ActionMetricsRefresh,
+			Description: "メトリクス更新",
+			Category:    "metrics",
+		},
+		{
+			Keys:        []string{"q"},
+			Action:      ActionMetricsBack,
+			Description: "前のビューへ戻る",
+			Category:    "metrics",
+		},
+	}
+
+	for _, binding := range bindings {
 		kb.bindings[binding.Action] = binding
 	}
 

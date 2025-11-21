@@ -155,6 +155,7 @@ func (l *Loader) Save(cfg *models.Config, path string) error {
 	l.v.Set("github", cfg.GitHub)
 	l.v.Set("ui", cfg.UI)
 	l.v.Set("cache", cfg.Cache)
+	l.v.Set("metrics", cfg.Metrics)
 
 	// ファイルに書き込み
 	if err := l.v.WriteConfigAs(path); err != nil {
