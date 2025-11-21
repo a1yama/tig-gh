@@ -4,14 +4,16 @@ import "time"
 
 // LeadTimeMetrics はリードタイムに関する統計データを表す
 type LeadTimeMetrics struct {
-	Overall               LeadTimeStat                                `json:"overall"`
-	ByRepository          map[string]LeadTimeStat                     `json:"by_repository"`
-	Trend                 []TrendPoint                                `json:"trend"`
-	PhaseBreakdown        ReviewPhaseMetrics                          `json:"phase_breakdown"` // 新規追加
-	StagnantPRs           StagnantPRMetrics                           `json:"stagnant_prs"`    // 新規追加
-	Alerts                AlertMetrics                                `json:"alerts"`          // 新規追加
-	ByDayOfWeek           map[time.Weekday]DayOfWeekStats             `json:"by_day_of_week"`
-	ByRepositoryDayOfWeek map[string]map[time.Weekday]DayOfWeekStats  `json:"by_repository_day_of_week"`
+	Overall               LeadTimeStat                               `json:"overall"`
+	ByRepository          map[string]LeadTimeStat                    `json:"by_repository"`
+	Trend                 []TrendPoint                               `json:"trend"`
+	PhaseBreakdown        ReviewPhaseMetrics                         `json:"phase_breakdown"` // 新規追加
+	StagnantPRs           StagnantPRMetrics                          `json:"stagnant_prs"`    // 新規追加
+	Alerts                AlertMetrics                               `json:"alerts"`          // 新規追加
+	ByDayOfWeek           map[time.Weekday]DayOfWeekStats            `json:"by_day_of_week"`
+	ByRepositoryDayOfWeek map[string]map[time.Weekday]DayOfWeekStats `json:"by_repository_day_of_week"`
+	WeeklyComparison      WeeklyComparison                           `json:"weekly_comparison"`
+	ByRepositoryWeekly    map[string]WeeklyComparison                `json:"by_repository_weekly"`
 }
 
 // LeadTimeStat は単一リポジトリまたは全体の統計値
@@ -78,6 +80,20 @@ type AlertMetrics struct {
 type DayOfWeekStats struct {
 	ReviewCount int `json:"review_count"`
 	MergeCount  int `json:"merge_count"`
+}
+
+// WeeklyStats は週次のレビュー/マージ件数
+type WeeklyStats struct {
+	ReviewCount int `json:"review_count"`
+	MergeCount  int `json:"merge_count"`
+}
+
+// WeeklyComparison は今週と先週の比較を表す
+type WeeklyComparison struct {
+	ThisWeek            WeeklyStats `json:"this_week"`
+	LastWeek            WeeklyStats `json:"last_week"`
+	ReviewChangePercent float64     `json:"review_change_percent"`
+	MergeChangePercent  float64     `json:"merge_change_percent"`
 }
 
 // MetricsProgress はメトリクス収集の進捗状況を表す

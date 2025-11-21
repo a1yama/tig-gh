@@ -56,6 +56,7 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 		Trend:                 []models.TrendPoint{},
 		ByDayOfWeek:           make(map[time.Weekday]models.DayOfWeekStats),
 		ByRepositoryDayOfWeek: make(map[string]map[time.Weekday]models.DayOfWeekStats),
+		ByRepositoryWeekly:    make(map[string]models.WeeklyComparison),
 	}
 
 	if len(repos) == 0 {
@@ -121,16 +122,20 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 
 	var overallSamples []leadTimeSample
 
+	currentTime := time.Now()
+
 	for slug, samples := range repoSamples {
 		durations := samplesToDurations(samples)
 		result.ByRepository[slug] = calculateLeadTimeStat(durations)
 		result.ByRepositoryDayOfWeek[slug] = aggregateByDayOfWeek(samples)
+		result.ByRepositoryWeekly[slug] = calculateWeeklyComparison(samples, currentTime)
 		overallSamples = append(overallSamples, samples...)
 	}
 
 	allDurations := samplesToDurations(overallSamples)
 	result.Overall = calculateLeadTimeStat(allDurations)
 	result.ByDayOfWeek = aggregateByDayOfWeek(overallSamples)
+	result.WeeklyComparison = calculateWeeklyComparison(overallSamples, currentTime)
 
 	// Fetch stagnant PR metrics
 	stagnantMetrics, err := r.fetchStagnantPRMetrics(ctx, repos, time.Now())
@@ -289,6 +294,54 @@ func aggregateByDayOfWeek(samples []leadTimeSample) map[time.Weekday]models.DayO
 	}
 
 	return stats
+}
+
+func calculateWeeklyComparison(samples []leadTimeSample, now time.Time) models.WeeklyComparison {
+	thisWeekStart := now.AddDate(0, 0, -7)
+	lastWeekStart := now.AddDate(0, 0, -14)
+
+	var thisWeek models.WeeklyStats
+	var lastWeek models.WeeklyStats
+
+	for _, sample := range samples {
+		mergedAt := sample.mergedAt
+		switch {
+		case !mergedAt.Before(thisWeekStart) && !mergedAt.After(now):
+			thisWeek.MergeCount++
+		case !mergedAt.Before(lastWeekStart) && mergedAt.Before(thisWeekStart):
+			lastWeek.MergeCount++
+		}
+
+		if sample.firstReviewAt == nil {
+			continue
+		}
+
+		reviewAt := *sample.firstReviewAt
+		switch {
+		case !reviewAt.Before(thisWeekStart) && !reviewAt.After(now):
+			thisWeek.ReviewCount++
+		case !reviewAt.Before(lastWeekStart) && reviewAt.Before(thisWeekStart):
+			lastWeek.ReviewCount++
+		}
+	}
+
+	return models.WeeklyComparison{
+		ThisWeek:            thisWeek,
+		LastWeek:            lastWeek,
+		ReviewChangePercent: calculatePercentChange(thisWeek.ReviewCount, lastWeek.ReviewCount),
+		MergeChangePercent:  calculatePercentChange(thisWeek.MergeCount, lastWeek.MergeCount),
+	}
+}
+
+func calculatePercentChange(current, previous int) float64 {
+	if previous == 0 {
+		if current == 0 {
+			return 0
+		}
+		return 100
+	}
+
+	return (float64(current-previous) / float64(previous)) * 100
 }
 
 func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repos []string, now time.Time) (models.StagnantPRMetrics, error) {

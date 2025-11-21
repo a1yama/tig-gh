@@ -417,6 +417,8 @@ func (m *MetricsView) renderContentLines() []string {
 	lines = append(lines, "")
 	lines = append(lines, m.renderDayOfWeekSection()...)
 	lines = append(lines, "")
+	lines = append(lines, m.renderWeeklyComparisonSection()...)
+	lines = append(lines, "")
 	lines = append(lines, m.renderStagnantPRSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderRepositorySection()...)
@@ -571,6 +573,53 @@ func (m *MetricsView) renderDayOfWeekSection() []string {
 
 	lines = append(lines, mergeRow)
 	lines = append(lines, reviewRow)
+
+	return lines
+}
+
+func (m *MetricsView) renderWeeklyComparisonSection() []string {
+	header := "Weekly Review Activity (This Week vs Last Week)"
+	comparison := m.metrics.WeeklyComparison
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("%s - %s", header, m.filteredRepo)
+		if repoComparison, ok := m.metrics.ByRepositoryWeekly[m.filteredRepo]; ok {
+			comparison = repoComparison
+		} else {
+			return []string{
+				styles.HeaderStyle.Render(header),
+				styles.MutedStyle.Render(fmt.Sprintf("No weekly data available for %s.", m.filteredRepo)),
+			}
+		}
+	}
+
+	lines := []string{
+		styles.HeaderStyle.Render(header),
+	}
+
+	lines = append(lines, fmt.Sprintf("%-25s %10s %10s", "Period", "Reviews", "Merges"))
+	lines = append(lines,
+		fmt.Sprintf("%-25s %10d %10d", "This Week (last 7 days)", comparison.ThisWeek.ReviewCount, comparison.ThisWeek.MergeCount),
+	)
+	lines = append(lines,
+		fmt.Sprintf("%-25s %10d %10d", "Last Week (8-14 days ago)", comparison.LastWeek.ReviewCount, comparison.LastWeek.MergeCount),
+	)
+
+	// Format the change percentages
+	reviewChangeStr := fmt.Sprintf("%+.1f%%", comparison.ReviewChangePercent)
+	mergeChangeStr := fmt.Sprintf("%+.1f%%", comparison.MergeChangePercent)
+
+	// Build the change line with proper alignment
+	col1 := "Change"
+	col2 := fmt.Sprintf("%10s", reviewChangeStr)
+	col3 := fmt.Sprintf("%10s", mergeChangeStr)
+
+	// Apply colors using ANSI codes for precise control
+	col2Colored := applyChangeColorANSI(col2, comparison.ReviewChangePercent)
+	col3Colored := applyChangeColorANSI(col3, comparison.MergeChangePercent)
+
+	changeLine := fmt.Sprintf("%-25s %s %s", col1, col2Colored, col3Colored)
+	lines = append(lines, changeLine)
 
 	return lines
 }
@@ -776,4 +825,45 @@ func shortWeekday(day time.Weekday) string {
 		return name
 	}
 	return name[:3]
+}
+
+func formatChangePercent(value float64) string {
+	formatted := fmt.Sprintf("%+.1f%%", value)
+	switch {
+	case value > 0:
+		return styles.SuccessStyle.Render(formatted)
+	case value < 0:
+		return styles.ErrorStyle.Render(formatted)
+	default:
+		return styles.MutedStyle.Render(formatted)
+	}
+}
+
+func applyChangeColor(paddedStr string, value float64) string {
+	switch {
+	case value > 0:
+		return styles.SuccessStyle.Render(paddedStr)
+	case value < 0:
+		return styles.ErrorStyle.Render(paddedStr)
+	default:
+		return styles.MutedStyle.Render(paddedStr)
+	}
+}
+
+func applyChangeColorANSI(text string, value float64) string {
+	const (
+		reset  = "\033[0m"
+		green  = "\033[32;1m" // bold green
+		red    = "\033[31;1m" // bold red
+		gray   = "\033[90m"   // dark gray
+	)
+
+	switch {
+	case value > 0:
+		return green + text + reset
+	case value < 0:
+		return red + text + reset
+	default:
+		return gray + text + reset
+	}
 }
