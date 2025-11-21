@@ -16,6 +16,7 @@ import (
 
 const (
 	stagnantPRThreshold = 72 * time.Hour // 3 days
+	reviewWorkerCount   = 12             // concurrent review fetchers
 )
 
 type leadTimeSample struct {
@@ -172,6 +173,7 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 	}
 
 	var samples []leadTimeSample
+	var reviewRequests []reviewRequest
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -205,9 +207,13 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 			}
 
 			samples = append(samples, leadTimeSample{
-				duration:      mergedAt.Sub(createdAt),
-				mergedAt:      mergedAt,
-				firstReviewAt: r.fetchSampleFirstReview(ctx, owner, repo, pr.GetNumber()),
+				duration: mergedAt.Sub(createdAt),
+				mergedAt: mergedAt,
+			})
+			lastIdx := len(samples) - 1
+			reviewRequests = append(reviewRequests, reviewRequest{
+				sampleIndex: lastIdx,
+				number:      pr.GetNumber(),
 			})
 		}
 
@@ -222,7 +228,57 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 		opts.Page = nextPage
 	}
 
+	if err := r.populateFirstReviewTimes(ctx, owner, repo, samples, reviewRequests); err != nil {
+		return nil, err
+	}
+
 	return samples, nil
+}
+
+type reviewRequest struct {
+	sampleIndex int
+	number      int
+}
+
+func (r *MetricsRepositoryImpl) populateFirstReviewTimes(ctx context.Context, owner, repo string, samples []leadTimeSample, requests []reviewRequest) error {
+	if len(requests) == 0 {
+		return nil
+	}
+
+	workerCount := reviewWorkerCount
+	if len(requests) < workerCount {
+		workerCount = len(requests)
+	}
+
+	jobs := make(chan reviewRequest)
+	var wg sync.WaitGroup
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for req := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				review := r.fetchSampleFirstReview(ctx, owner, repo, req.number)
+				samples[req.sampleIndex].firstReviewAt = review
+			}
+		}()
+	}
+
+sendLoop:
+	for _, req := range requests {
+		select {
+		case <-ctx.Done():
+			break sendLoop
+		case jobs <- req:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	return ctx.Err()
 }
 
 func (r *MetricsRepositoryImpl) fetchSampleFirstReview(ctx context.Context, owner, repo string, number int) *time.Time {
