@@ -4,17 +4,18 @@ import "time"
 
 // LeadTimeMetrics はリードタイムに関する統計データを表す
 type LeadTimeMetrics struct {
-	Overall               LeadTimeStat                               `json:"overall"`
-	ByRepository          map[string]LeadTimeStat                    `json:"by_repository"`
-	Trend                 []TrendPoint                               `json:"trend"`
-	PhaseBreakdown        ReviewPhaseMetrics                         `json:"phase_breakdown"` // 新規追加
-	StagnantPRs           StagnantPRMetrics                          `json:"stagnant_prs"`    // 新規追加
-	Alerts                AlertMetrics                               `json:"alerts"`          // 新規追加
-	ByDayOfWeek           map[time.Weekday]DayOfWeekStats            `json:"by_day_of_week"`
-	ByRepositoryDayOfWeek map[string]map[time.Weekday]DayOfWeekStats `json:"by_repository_day_of_week"`
-	WeeklyComparison      WeeklyComparison                           `json:"weekly_comparison"`
-	ByRepositoryWeekly    map[string]WeeklyComparison                `json:"by_repository_weekly"`
-	QualityIssues         PRQualityIssues                            `json:"quality_issues"`
+	Overall                    LeadTimeStat                               `json:"overall"`
+	ByRepository               map[string]LeadTimeStat                    `json:"by_repository"`
+	Trend                      []TrendPoint                               `json:"trend"`
+	PhaseBreakdown             ReviewPhaseMetrics                         `json:"phase_breakdown"` // 新規追加
+	ByRepositoryPhaseBreakdown map[string]ReviewPhaseMetrics              `json:"by_repository_phase_breakdown"`
+	StagnantPRs                StagnantPRMetrics                          `json:"stagnant_prs"` // 新規追加
+	Alerts                     AlertMetrics                               `json:"alerts"`       // 新規追加
+	ByDayOfWeek                map[time.Weekday]DayOfWeekStats            `json:"by_day_of_week"`
+	ByRepositoryDayOfWeek      map[string]map[time.Weekday]DayOfWeekStats `json:"by_repository_day_of_week"`
+	WeeklyComparison           WeeklyComparison                           `json:"weekly_comparison"`
+	ByRepositoryWeekly         map[string]WeeklyComparison                `json:"by_repository_weekly"`
+	QualityIssues              PRQualityIssues                            `json:"quality_issues"`
 }
 
 // LeadTimeStat は単一リポジトリまたは全体の統計値
@@ -37,6 +38,7 @@ type ReviewPhaseMetrics struct {
 	FirstReviewToApproval time.Duration `json:"first_review_to_approval"` // 最初のレビュー→承認
 	ApprovalToMerge       time.Duration `json:"approval_to_merge"`        // 承認→マージ
 	TotalLeadTime         time.Duration `json:"total_lead_time"`          // 全体のリードタイム
+	SampleCount           int           `json:"sample_count"`
 }
 
 // StagnantPRInfo は最も古い滞留PRの情報

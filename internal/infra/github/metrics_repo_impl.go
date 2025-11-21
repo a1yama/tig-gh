@@ -24,6 +24,7 @@ type leadTimeSample struct {
 	duration      time.Duration
 	mergedAt      time.Time
 	firstReviewAt *time.Time
+	approvedAt    *time.Time
 }
 
 // MetricsRepositoryImpl は MetricsRepository を実装する
@@ -53,12 +54,13 @@ func (r *MetricsRepositoryImpl) GetRateLimit(ctx context.Context) (*github.Rate,
 // FetchLeadTimeMetrics は複数リポジトリのリードタイムメトリクスを取得する
 func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos []string, since time.Time, progressFn func(models.MetricsProgress)) (*models.LeadTimeMetrics, error) {
 	result := &models.LeadTimeMetrics{
-		Overall:               models.LeadTimeStat{},
-		ByRepository:          make(map[string]models.LeadTimeStat),
-		Trend:                 []models.TrendPoint{},
-		ByDayOfWeek:           make(map[time.Weekday]models.DayOfWeekStats),
-		ByRepositoryDayOfWeek: make(map[string]map[time.Weekday]models.DayOfWeekStats),
-		ByRepositoryWeekly:    make(map[string]models.WeeklyComparison),
+		Overall:                    models.LeadTimeStat{},
+		ByRepository:               make(map[string]models.LeadTimeStat),
+		Trend:                      []models.TrendPoint{},
+		ByDayOfWeek:                make(map[time.Weekday]models.DayOfWeekStats),
+		ByRepositoryDayOfWeek:      make(map[string]map[time.Weekday]models.DayOfWeekStats),
+		ByRepositoryWeekly:         make(map[string]models.WeeklyComparison),
+		ByRepositoryPhaseBreakdown: make(map[string]models.ReviewPhaseMetrics),
 	}
 
 	if len(repos) == 0 {
@@ -131,6 +133,7 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 		result.ByRepository[slug] = calculateLeadTimeStat(durations)
 		result.ByRepositoryDayOfWeek[slug] = aggregateByDayOfWeek(samples)
 		result.ByRepositoryWeekly[slug] = calculateWeeklyComparison(samples, currentTime)
+		result.ByRepositoryPhaseBreakdown[slug] = calculatePhaseBreakdown(samples)
 		overallSamples = append(overallSamples, samples...)
 	}
 
@@ -138,6 +141,7 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 	result.Overall = calculateLeadTimeStat(allDurations)
 	result.ByDayOfWeek = aggregateByDayOfWeek(overallSamples)
 	result.WeeklyComparison = calculateWeeklyComparison(overallSamples, currentTime)
+	result.PhaseBreakdown = calculatePhaseBreakdown(overallSamples)
 
 	qualityIssues, qualityErr := r.analyzeOpenPRQuality(ctx, repos)
 	if qualityErr != nil {
@@ -269,8 +273,9 @@ func (r *MetricsRepositoryImpl) populateFirstReviewTimes(ctx context.Context, ow
 				if ctx.Err() != nil {
 					return
 				}
-				review := r.fetchSampleFirstReview(ctx, owner, repo, req.number)
-				samples[req.sampleIndex].firstReviewAt = review
+				firstReview, approval := r.fetchSampleFirstReview(ctx, owner, repo, req.number)
+				samples[req.sampleIndex].firstReviewAt = firstReview
+				samples[req.sampleIndex].approvedAt = approval
 			}
 		}()
 	}
@@ -289,24 +294,26 @@ sendLoop:
 	return ctx.Err()
 }
 
-func (r *MetricsRepositoryImpl) fetchSampleFirstReview(ctx context.Context, owner, repo string, number int) *time.Time {
-	firstReview, err := r.fetchFirstReviewTime(ctx, owner, repo, number)
+func (r *MetricsRepositoryImpl) fetchSampleFirstReview(ctx context.Context, owner, repo string, number int) (*time.Time, *time.Time) {
+	firstReview, approved, err := r.fetchReviewTimestamps(ctx, owner, repo, number)
 	if err != nil {
 		fmt.Printf("failed to fetch reviews for %s/%s#%d: %v\n", owner, repo, number, err)
-		return nil
+		return nil, nil
 	}
-	return firstReview
+	return firstReview, approved
 }
 
-func (r *MetricsRepositoryImpl) fetchFirstReviewTime(ctx context.Context, owner, repo string, number int) (*time.Time, error) {
+func (r *MetricsRepositoryImpl) fetchReviewTimestamps(ctx context.Context, owner, repo string, number int) (*time.Time, *time.Time, error) {
 	opts := &github.ListOptions{PerPage: 100}
-	var first time.Time
-	found := false
+	var firstReview time.Time
+	firstFound := false
+	var approval time.Time
+	approvalFound := false
 
 	for {
 		reviews, resp, err := r.client.client.PullRequests.ListReviews(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, handleGitHubError(err, resp)
+			return nil, nil, handleGitHubError(err, resp)
 		}
 
 		for _, review := range reviews {
@@ -314,9 +321,16 @@ func (r *MetricsRepositoryImpl) fetchFirstReviewTime(ctx context.Context, owner,
 				continue
 			}
 			submitted := review.SubmittedAt.Time
-			if !found || submitted.Before(first) {
-				first = submitted
-				found = true
+			if !firstFound || submitted.Before(firstReview) {
+				firstReview = submitted
+				firstFound = true
+			}
+
+			if strings.EqualFold(review.GetState(), "APPROVED") {
+				if !approvalFound || submitted.Before(approval) {
+					approval = submitted
+					approvalFound = true
+				}
 			}
 		}
 
@@ -326,12 +340,19 @@ func (r *MetricsRepositoryImpl) fetchFirstReviewTime(ctx context.Context, owner,
 		opts.Page = resp.NextPage
 	}
 
-	if !found {
-		return nil, nil
+	var firstPtr *time.Time
+	if firstFound {
+		firstCopy := firstReview
+		firstPtr = &firstCopy
 	}
 
-	firstCopy := first
-	return &firstCopy, nil
+	var approvalPtr *time.Time
+	if approvalFound {
+		approvalCopy := approval
+		approvalPtr = &approvalCopy
+	}
+
+	return firstPtr, approvalPtr, nil
 }
 
 func aggregateByDayOfWeek(samples []leadTimeSample) map[time.Weekday]models.DayOfWeekStats {
@@ -358,6 +379,53 @@ func aggregateByDayOfWeek(samples []leadTimeSample) map[time.Weekday]models.DayO
 	}
 
 	return stats
+}
+
+func calculatePhaseBreakdown(samples []leadTimeSample) models.ReviewPhaseMetrics {
+	if len(samples) == 0 {
+		return models.ReviewPhaseMetrics{}
+	}
+
+	var (
+		totalCreatedToFirst  time.Duration
+		totalFirstToApproval time.Duration
+		totalApprovalToMerge time.Duration
+		totalLeadTime        time.Duration
+		count                int64
+	)
+
+	for _, sample := range samples {
+		if sample.firstReviewAt == nil || sample.approvedAt == nil {
+			continue
+		}
+
+		createdAt := sample.mergedAt.Add(-sample.duration)
+		firstReviewAt := *sample.firstReviewAt
+		approvedAt := *sample.approvedAt
+
+		// 期待される順序でタイムスタンプが揃っていない場合は除外
+		if firstReviewAt.Before(createdAt) || approvedAt.Before(firstReviewAt) || sample.mergedAt.Before(approvedAt) {
+			continue
+		}
+
+		totalCreatedToFirst += firstReviewAt.Sub(createdAt)
+		totalFirstToApproval += approvedAt.Sub(firstReviewAt)
+		totalApprovalToMerge += sample.mergedAt.Sub(approvedAt)
+		totalLeadTime += sample.duration
+		count++
+	}
+
+	if count == 0 {
+		return models.ReviewPhaseMetrics{}
+	}
+
+	return models.ReviewPhaseMetrics{
+		CreatedToFirstReview:  time.Duration(int64(totalCreatedToFirst) / count),
+		FirstReviewToApproval: time.Duration(int64(totalFirstToApproval) / count),
+		ApprovalToMerge:       time.Duration(int64(totalApprovalToMerge) / count),
+		TotalLeadTime:         time.Duration(int64(totalLeadTime) / count),
+		SampleCount:           int(count),
+	}
 }
 
 func calculateWeeklyComparison(samples []leadTimeSample, now time.Time) models.WeeklyComparison {

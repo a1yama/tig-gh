@@ -89,10 +89,11 @@ func TestMetricsViewViewContainsSections(t *testing.T) {
 	view := NewMetricsView()
 	view.metrics = metrics
 	view.lastUpdated = time.Now()
-	view.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	view.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
 
 	output := view.View()
 	assertContains(t, output, "Overall Metrics")
+	assertContains(t, output, "Review Phase Breakdown")
 	assertContains(t, output, "Per Repository")
 	assertContains(t, output, "owner/repo-a")
 	assertContains(t, output, "PR Quality Issues (Top 10)")
@@ -165,6 +166,29 @@ func sampleMetrics() *models.LeadTimeMetrics {
 				Average: 48 * time.Hour,
 				Median:  36 * time.Hour,
 				Count:   6,
+			},
+		},
+		PhaseBreakdown: models.ReviewPhaseMetrics{
+			CreatedToFirstReview:  4 * time.Hour,
+			FirstReviewToApproval: 8 * time.Hour,
+			ApprovalToMerge:       2 * time.Hour,
+			TotalLeadTime:         14 * time.Hour,
+			SampleCount:           23,
+		},
+		ByRepositoryPhaseBreakdown: map[string]models.ReviewPhaseMetrics{
+			"owner/repo-a": {
+				CreatedToFirstReview:  3 * time.Hour,
+				FirstReviewToApproval: 6 * time.Hour,
+				ApprovalToMerge:       time.Hour,
+				TotalLeadTime:         10 * time.Hour,
+				SampleCount:           10,
+			},
+			"owner/repo-b": {
+				CreatedToFirstReview:  5 * time.Hour,
+				FirstReviewToApproval: 10 * time.Hour,
+				ApprovalToMerge:       3 * time.Hour,
+				TotalLeadTime:         18 * time.Hour,
+				SampleCount:           13,
 			},
 		},
 		Trend: []models.TrendPoint{

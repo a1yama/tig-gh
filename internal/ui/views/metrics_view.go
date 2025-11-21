@@ -415,6 +415,8 @@ func (m *MetricsView) renderContentLines() []string {
 
 	lines = append(lines, m.renderOverallSection()...)
 	lines = append(lines, "")
+	lines = append(lines, m.renderReviewPhaseSection()...)
+	lines = append(lines, "")
 	lines = append(lines, m.renderDayOfWeekSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderWeeklyComparisonSection()...)
@@ -543,6 +545,74 @@ func (m *MetricsView) renderStagnantPRSection() []string {
 			)
 		}
 	}
+
+	return lines
+}
+
+func (m *MetricsView) renderReviewPhaseSection() []string {
+	header := "Review Phase Breakdown"
+	phaseMetrics := m.metrics.PhaseBreakdown
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("%s (Filtered: %s)", header, m.filteredRepo)
+		if m.metrics.ByRepositoryPhaseBreakdown != nil {
+			if repoPhase, ok := m.metrics.ByRepositoryPhaseBreakdown[m.filteredRepo]; ok {
+				phaseMetrics = repoPhase
+			} else {
+				return []string{
+					styles.HeaderStyle.Render(header),
+					styles.MutedStyle.Render(fmt.Sprintf("No review phase data available for %s.", m.filteredRepo)),
+				}
+			}
+		} else {
+			return []string{
+				styles.HeaderStyle.Render(header),
+				styles.MutedStyle.Render(fmt.Sprintf("No review phase data available for %s.", m.filteredRepo)),
+			}
+		}
+	}
+
+	lines := []string{
+		styles.HeaderStyle.Render(header),
+	}
+
+	if phaseMetrics.SampleCount == 0 {
+		if m.filteredRepo != "" {
+			lines = append(lines, styles.MutedStyle.Render(fmt.Sprintf("Not enough review phase data for %s.", m.filteredRepo)))
+		} else {
+			lines = append(lines, styles.MutedStyle.Render("Not enough review phase data."))
+		}
+		return lines
+	}
+
+	type phaseInfo struct {
+		label    string
+		duration time.Duration
+	}
+
+	phases := []phaseInfo{
+		{label: "PR Created → First Review:", duration: phaseMetrics.CreatedToFirstReview},
+		{label: "First Review → Approval:", duration: phaseMetrics.FirstReviewToApproval},
+		{label: "Approval → Merge:", duration: phaseMetrics.ApprovalToMerge},
+	}
+
+	longest := time.Duration(0)
+	for _, phase := range phases {
+		if phase.duration > longest {
+			longest = phase.duration
+		}
+	}
+
+	for _, phase := range phases {
+		line := fmt.Sprintf("  %-30s avg %s (%d PRs)", phase.label, formatDuration(phase.duration), phaseMetrics.SampleCount)
+		if longest > 0 && phase.duration == longest {
+			line += " ← ボトルネック"
+		}
+		lines = append(lines, line)
+	}
+
+	lines = append(lines, "  "+strings.Repeat("─", 45))
+	lines = append(lines, fmt.Sprintf("  %-30s avg %s", "Total Lead Time:", formatDuration(phaseMetrics.TotalLeadTime)))
 
 	return lines
 }
