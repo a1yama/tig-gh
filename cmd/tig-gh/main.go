@@ -153,6 +153,7 @@ func main() {
 		fetchMetricsUseCase,
 		owner,
 		repo,
+		cfg.UI.DefaultView,
 	)
 
 	// bubbletea プログラムの起動

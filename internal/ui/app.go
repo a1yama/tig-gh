@@ -73,9 +73,21 @@ func NewAppWithUseCases(
 	searchUseCase *usecase.SearchUseCase,
 	fetchMetricsUseCase *usecase.FetchLeadTimeMetricsUseCase,
 	owner, repo string,
+	defaultView string,
 ) *App {
+	// デフォルトビューを決定
+	var initialView ViewType
+	switch defaultView {
+	case "prs", "pull_requests":
+		initialView = PullRequestListView
+	case "commits":
+		initialView = CommitListView
+	default:
+		initialView = IssueListView
+	}
+
 	return &App{
-		currentView:         IssueListView,
+		currentView:         initialView,
 		issueView:           views.NewIssueViewWithUseCase(fetchIssuesUseCase, owner, repo),
 		prView:              views.NewPRViewWithUseCase(fetchPRsUseCase, owner, repo),
 		prQueueView:         views.NewPRQueueViewWithUseCase(fetchPRsUseCase, owner, repo),
@@ -90,14 +102,23 @@ func NewAppWithUseCases(
 		owner:               owner,
 		repo:                repo,
 		ready:               false,
-		lastPrimaryView:     IssueListView,
+		lastPrimaryView:     initialView,
 	}
 }
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
-	a.issueViewInited = true
-	return a.issueView.Init()
+	switch a.currentView {
+	case PullRequestListView:
+		a.prViewInited = true
+		return a.prView.Init()
+	case CommitListView:
+		a.commitViewInited = true
+		return a.commitView.Init()
+	default:
+		a.issueViewInited = true
+		return a.issueView.Init()
+	}
 }
 
 // Update handles messages and updates the application state
