@@ -413,8 +413,6 @@ func (m *MetricsView) renderContentLines() []string {
 		return m.renderFilterModeUI()
 	}
 
-	lines = append(lines, m.renderOverallSection()...)
-	lines = append(lines, "")
 	lines = append(lines, m.renderReviewPhaseSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderDayOfWeekSection()...)
@@ -464,32 +462,6 @@ func (m *MetricsView) renderFilterModeUI() []string {
 	helpText := "Controls: j/k navigate • Enter apply filter • a show all • Esc cancel"
 	lines = append(lines, styles.HelpStyle.Render(helpText))
 
-	return lines
-}
-
-func (m *MetricsView) renderOverallSection() []string {
-	header := "Overall Metrics"
-	stat := m.metrics.Overall
-
-	// フィルタリングされている場合は該当リポジトリの統計を使用
-	if m.filteredRepo != "" {
-		header = fmt.Sprintf("Overall Metrics (Filtered: %s)", m.filteredRepo)
-		if repoStat, ok := m.metrics.ByRepository[m.filteredRepo]; ok {
-			stat = repoStat
-		} else {
-			return []string{
-				styles.HeaderStyle.Render(header),
-				styles.MutedStyle.Render(fmt.Sprintf("No data available for %s.", m.filteredRepo)),
-			}
-		}
-	}
-
-	lines := []string{
-		styles.HeaderStyle.Render(header),
-		fmt.Sprintf("Average: %s", formatDuration(stat.Average)),
-		fmt.Sprintf("Median: %s", formatDuration(stat.Median)),
-		fmt.Sprintf("Total PRs: %d", stat.Count),
-	}
 	return lines
 }
 
