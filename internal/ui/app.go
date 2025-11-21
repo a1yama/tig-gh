@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/a1yama/tig-gh/internal/app/usecase"
+	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/ui/views"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -74,6 +75,7 @@ func NewAppWithUseCases(
 	fetchMetricsUseCase *usecase.FetchLeadTimeMetricsUseCase,
 	owner, repo string,
 	defaultView string,
+	metricsConfig *models.MetricsConfig,
 ) *App {
 	// デフォルトビューを決定
 	var initialView ViewType
@@ -93,7 +95,7 @@ func NewAppWithUseCases(
 		prQueueView:         views.NewPRQueueViewWithUseCase(fetchPRsUseCase, owner, repo),
 		commitView:          views.NewCommitViewWithUseCase(fetchCommitsUseCase, owner, repo),
 		searchView:          views.NewSearchViewWithUseCase(searchUseCase, owner, repo),
-		metricsView:         views.NewMetricsViewWithUseCase(fetchMetricsUseCase),
+		metricsView:         views.NewMetricsViewWithUseCase(fetchMetricsUseCase, metricsConfig),
 		fetchIssuesUseCase:  fetchIssuesUseCase,
 		fetchPRsUseCase:     fetchPRsUseCase,
 		fetchCommitsUseCase: fetchCommitsUseCase,

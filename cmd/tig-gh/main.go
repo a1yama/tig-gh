@@ -154,6 +154,7 @@ func main() {
 		owner,
 		repo,
 		cfg.UI.DefaultView,
+		&cfg.Metrics,
 	)
 
 	// bubbletea プログラムの起動

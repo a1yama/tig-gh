@@ -48,6 +48,24 @@ type MetricsConfig struct {
 
 	// CalculationPeriod はメトリクス計算対象期間
 	CalculationPeriod time.Duration `mapstructure:"calculation_period" yaml:"calculation_period"`
+
+	// ShowReviewPhases はレビューフェーズ分解の表示/非表示
+	ShowReviewPhases bool `mapstructure:"show_review_phases" yaml:"show_review_phases"`
+
+	// ShowDayOfWeek は曜日ごとの統計の表示/非表示
+	ShowDayOfWeek bool `mapstructure:"show_day_of_week" yaml:"show_day_of_week"`
+
+	// ShowWeeklyComparison は週次比較の表示/非表示
+	ShowWeeklyComparison bool `mapstructure:"show_weekly_comparison" yaml:"show_weekly_comparison"`
+
+	// ShowQualityIssues はPRクオリティチェックの表示/非表示
+	ShowQualityIssues bool `mapstructure:"show_quality_issues" yaml:"show_quality_issues"`
+
+	// ShowStagnantPRs は滞留PRの表示/非表示
+	ShowStagnantPRs bool `mapstructure:"show_stagnant_prs" yaml:"show_stagnant_prs"`
+
+	// ShowRepositoryStats はリポジトリごとの統計の表示/非表示
+	ShowRepositoryStats bool `mapstructure:"show_repository_stats" yaml:"show_repository_stats"`
 }
 
 // UIConfig はUI関連の設定を表す
@@ -141,9 +159,15 @@ func DefaultConfig() *Config {
 			UseFileCache: true,
 		},
 		Metrics: MetricsConfig{
-			Enabled:           false,
-			LeadTimeEnabled:   false,
-			CalculationPeriod: 30 * 24 * time.Hour,
+			Enabled:              false,
+			LeadTimeEnabled:      false,
+			CalculationPeriod:    30 * 24 * time.Hour,
+			ShowReviewPhases:     true,
+			ShowDayOfWeek:        true,
+			ShowWeeklyComparison: true,
+			ShowQualityIssues:    true,
+			ShowStagnantPRs:      true,
+			ShowRepositoryStats:  true,
 		},
 	}
 }

@@ -41,6 +41,20 @@ metrics:
   # データ取得期間 (例: 720h=30日, 2160h=90日)
   calculation_period: 720h
 
+  # 各セクションの表示/非表示設定
+  # レビューフェーズ分解の表示
+  show_review_phases: true
+  # 曜日ごとの統計の表示
+  show_day_of_week: true
+  # 週次比較の表示
+  show_weekly_comparison: true
+  # PRクオリティチェックの表示
+  show_quality_issues: true
+  # 滞留PRの表示
+  show_stagnant_prs: true
+  # リポジトリごとの統計の表示
+  show_repository_stats: true
+
 # UI関連の設定
 ui:
   # カラーテーマ: "light", "dark", "auto"

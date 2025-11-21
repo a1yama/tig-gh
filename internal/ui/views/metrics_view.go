@@ -56,6 +56,7 @@ type MetricsView struct {
 	filterMode        bool   // フィルタモード中かどうか
 	filteredRepo      string // フィルタ中のリポジトリ（空なら全体表示）
 	selectedRepoIndex int    // フィルタモード中の選択インデックス
+	config            *models.MetricsConfig
 }
 
 // NewMetricsView は空のメトリクスビューを返す
@@ -68,9 +69,21 @@ func NewMetricsView() *MetricsView {
 }
 
 // NewMetricsViewWithUseCase はユースケースをバインドしたビューを返す
-func NewMetricsViewWithUseCase(useCase LeadTimeMetricsUseCase) *MetricsView {
+func NewMetricsViewWithUseCase(useCase LeadTimeMetricsUseCase, config *models.MetricsConfig) *MetricsView {
 	view := NewMetricsView()
 	view.useCase = useCase
+	view.config = config
+	if view.config == nil {
+		// デフォルト設定（全部表示）
+		view.config = &models.MetricsConfig{
+			ShowReviewPhases:     true,
+			ShowDayOfWeek:        true,
+			ShowWeeklyComparison: true,
+			ShowQualityIssues:    true,
+			ShowStagnantPRs:      true,
+			ShowRepositoryStats:  true,
+		}
+	}
 	return view
 }
 
@@ -413,18 +426,30 @@ func (m *MetricsView) renderContentLines() []string {
 		return m.renderFilterModeUI()
 	}
 
-	lines = append(lines, m.renderReviewPhaseSection()...)
-	lines = append(lines, "")
-	lines = append(lines, m.renderDayOfWeekSection()...)
-	lines = append(lines, "")
-	lines = append(lines, m.renderWeeklyComparisonSection()...)
-	lines = append(lines, "")
-	lines = append(lines, m.renderPRQualitySection()...)
-	lines = append(lines, "")
-	lines = append(lines, m.renderStagnantPRSection()...)
-	lines = append(lines, "")
-	lines = append(lines, m.renderRepositorySection()...)
-	lines = append(lines, "")
+	if m.config.ShowReviewPhases {
+		lines = append(lines, m.renderReviewPhaseSection()...)
+		lines = append(lines, "")
+	}
+	if m.config.ShowDayOfWeek {
+		lines = append(lines, m.renderDayOfWeekSection()...)
+		lines = append(lines, "")
+	}
+	if m.config.ShowWeeklyComparison {
+		lines = append(lines, m.renderWeeklyComparisonSection()...)
+		lines = append(lines, "")
+	}
+	if m.config.ShowQualityIssues {
+		lines = append(lines, m.renderPRQualitySection()...)
+		lines = append(lines, "")
+	}
+	if m.config.ShowStagnantPRs {
+		lines = append(lines, m.renderStagnantPRSection()...)
+		lines = append(lines, "")
+	}
+	if m.config.ShowRepositoryStats {
+		lines = append(lines, m.renderRepositorySection()...)
+		lines = append(lines, "")
+	}
 
 	// ヘルプテキストを更新
 	helpText := "Controls: j/k scroll • r refresh • f filter • a show all • q back"
