@@ -191,8 +191,6 @@ func (m *PRView) fetchPRs() tea.Cmd {
 // handleKeyPress handles keyboard input
 func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyStr := msg.String()
-	// Debug: log key press
-	// fmt.Fprintf(os.Stderr, "[PRView.handleKeyPress] key=%s cursor=%d prs=%d\n", keyStr, m.cursor, len(m.prs))
 
 	// Handle Enter key using Type check for reliability
 	if msg.Type == tea.KeyEnter {
@@ -251,19 +249,15 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "j", "down":
-		// fmt.Fprintf(os.Stderr, "[PRView] j/down pressed, cursor before=%d\n", m.cursor)
 		if m.cursor < len(m.prs)-1 {
 			m.cursor++
 		}
-		// fmt.Fprintf(os.Stderr, "[PRView] cursor after=%d\n", m.cursor)
 		return m, nil
 
 	case "k", "up":
-		// fmt.Fprintf(os.Stderr, "[PRView] k/up pressed, cursor before=%d\n", m.cursor)
 		if m.cursor > 0 {
 			m.cursor--
 		}
-		// fmt.Fprintf(os.Stderr, "[PRView] cursor after=%d\n", m.cursor)
 		return m, nil
 
 	case "g":
@@ -293,10 +287,6 @@ func (m *PRView) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // View renders the PR view
 func (m *PRView) View() string {
-	// Debug: log view state
-	// fmt.Fprintf(os.Stderr, "[PRView.View] width=%d height=%d loading=%v err=%v prs=%d cursor=%d\n",
-	//	m.width, m.height, m.loading, m.err != nil, len(m.prs), m.cursor)
-
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
 	}

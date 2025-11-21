@@ -547,7 +547,6 @@ func (m *MetricsView) renderStagnantPRSection() []string {
 	if m.filteredRepo == "" {
 		lines = append(lines,
 			fmt.Sprintf("Total stagnant PRs:  %d", stagnant.TotalStagnant),
-			fmt.Sprintf("Average age:         %s", formatDuration(stagnant.AverageAge)),
 		)
 	}
 

@@ -698,6 +698,7 @@ func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repo
 			}
 
 			age := now.Sub(pr.CreatedAt.Time)
+
 			if age >= stagnantPRThreshold {
 				allStagnantPRs = append(allStagnantPRs, models.StagnantPRInfo{
 					Repository: repoSlug,
@@ -715,9 +716,9 @@ func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repo
 		}, nil
 	}
 
-	var totalAge time.Duration
+	var totalAgeSeconds float64
 	for i := range allStagnantPRs {
-		totalAge += allStagnantPRs[i].Age
+		totalAgeSeconds += allStagnantPRs[i].Age.Seconds()
 	}
 
 	sort.Slice(allStagnantPRs, func(i, j int) bool {
@@ -730,10 +731,16 @@ func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repo
 	}
 	longestWaiting := append([]models.StagnantPRInfo(nil), allStagnantPRs[:topCount]...)
 
+	averageAge := time.Duration(0)
+	if len(allStagnantPRs) > 0 {
+		averageSeconds := totalAgeSeconds / float64(len(allStagnantPRs))
+		averageAge = time.Duration(averageSeconds * float64(time.Second))
+	}
+
 	return models.StagnantPRMetrics{
 		Threshold:      stagnantPRThreshold,
 		TotalStagnant:  len(allStagnantPRs),
-		AverageAge:     time.Duration(int64(totalAge) / int64(len(allStagnantPRs))),
+		AverageAge:     averageAge,
 		LongestWaiting: longestWaiting,
 	}, nil
 }

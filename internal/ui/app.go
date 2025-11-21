@@ -1,9 +1,6 @@
 package ui
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/a1yama/tig-gh/internal/app/usecase"
 	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/ui/views"
@@ -287,25 +284,13 @@ func (a *App) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the application
 func (a *App) View() string {
-	debugFile, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if debugFile != nil {
-		fmt.Fprintf(debugFile, "[App.View] currentView=%d ready=%v\n", a.currentView, a.ready)
-		debugFile.Close()
-	}
-
 	if !a.ready {
 		return "Initializing tig-gh..."
 	}
 
 	switch a.currentView {
 	case IssueListView:
-		view := a.issueView.View()
-		debugFile2, _ := os.OpenFile("/tmp/tig-gh-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if debugFile2 != nil {
-			fmt.Fprintf(debugFile2, "[App.View] Returning IssueView, len=%d\n", len(view))
-			debugFile2.Close()
-		}
-		return view
+		return a.issueView.View()
 
 	case PullRequestListView:
 		return a.prView.View()
