@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/a1yama/tig-gh/internal/app/usecase"
@@ -109,12 +110,26 @@ func main() {
 	githubClient := github.NewClient(token)
 
 	// キャッシュの初期化
-	cacheConfig := cache.DefaultConfig()
-	cacheService, err := cache.NewCacheWithConfig(cacheConfig)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Failed to initialize cache: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Continuing without cache...\n")
-		cacheService = nil
+	var cacheService repository.CacheService
+	if cfg.Cache.Enabled {
+		cacheConfig := cache.DefaultConfig()
+		if cfg.Cache.TTL > 0 {
+			cacheConfig.MemoryTTL = cfg.Cache.TTL
+			cacheConfig.FileTTL = cfg.Cache.TTL
+		}
+		if dir := strings.TrimSpace(cfg.Cache.Dir); dir != "" {
+			cacheConfig.FileDir = expandPath(dir)
+		}
+		if !cfg.Cache.UseFileCache {
+			cacheConfig.FileEnabled = false
+		}
+
+		cacheService, err = cache.NewCacheWithConfig(cacheConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to initialize cache: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Continuing without cache...\n")
+			cacheService = nil
+		}
 	}
 
 	// リポジトリの初期化（キャッシュあり）
@@ -175,4 +190,16 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func expandPath(path string) string {
+	if path == "" {
+		return path
+	}
+	if strings.HasPrefix(path, "~") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(path, "~"))
+		}
+	}
+	return path
 }

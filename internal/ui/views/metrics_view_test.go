@@ -41,7 +41,8 @@ func TestMetricsViewInitFetchesData(t *testing.T) {
 	metrics := sampleMetrics()
 	useCase := &stubLeadTimeUseCase{metrics: metrics}
 
-	view := NewMetricsViewWithUseCase(useCase)
+	cfg := models.DefaultConfig()
+	view := NewMetricsViewWithUseCase(useCase, &cfg.Metrics)
 	view.Update(tea.WindowSizeMsg{Width: 90, Height: 30})
 
 	cmd := view.Init()
@@ -86,22 +87,24 @@ func TestMetricsViewInitFetchesData(t *testing.T) {
 
 func TestMetricsViewViewContainsSections(t *testing.T) {
 	metrics := sampleMetrics()
-	view := NewMetricsView()
+	cfg := models.DefaultConfig()
+	view := NewMetricsViewWithUseCase(nil, &cfg.Metrics)
 	view.metrics = metrics
 	view.lastUpdated = time.Now()
 	view.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
 
 	output := view.View()
-	assertContains(t, output, "Overall Metrics")
+	assertContains(t, output, "Overall Lead Time")
 	assertContains(t, output, "Review Phase Breakdown")
 	assertContains(t, output, "Per Repository")
 	assertContains(t, output, "owner/repo-a")
-	assertContains(t, output, "PR Quality Issues (Top 10)")
+	assertContains(t, output, "PR Quality Issues (2 issues)")
 	assertContains(t, output, "High Priority:")
 }
 
 func TestMetricsViewErrorState(t *testing.T) {
-	view := NewMetricsView()
+	cfg := models.DefaultConfig()
+	view := NewMetricsViewWithUseCase(nil, &cfg.Metrics)
 	view.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 
 	errMsg := metricsLoadedMsg{metrics: nil, err: assertError("boom")}
@@ -114,7 +117,8 @@ func TestMetricsViewErrorState(t *testing.T) {
 
 func TestMetricsViewScrollAndRefresh(t *testing.T) {
 	metrics := sampleMetrics()
-	view := NewMetricsViewWithUseCase(&stubLeadTimeUseCase{metrics: metrics})
+	cfg := models.DefaultConfig()
+	view := NewMetricsViewWithUseCase(&stubLeadTimeUseCase{metrics: metrics}, &cfg.Metrics)
 	view.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 	view.metrics = metrics
 

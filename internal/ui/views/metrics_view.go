@@ -59,30 +59,35 @@ type MetricsView struct {
 	config            *models.MetricsConfig
 }
 
+func defaultMetricsConfig() *models.MetricsConfig {
+	cfg := models.DefaultConfig()
+	return &cfg.Metrics
+}
+
+func cloneMetricsConfig(cfg *models.MetricsConfig) *models.MetricsConfig {
+	if cfg == nil {
+		return defaultMetricsConfig()
+	}
+	clone := *cfg
+	return &clone
+}
+
 // NewMetricsView は空のメトリクスビューを返す
 func NewMetricsView() *MetricsView {
 	return &MetricsView{
 		statusBar: components.NewStatusBar(),
 		loading:   false,
 		scroll:    0,
+		config:    defaultMetricsConfig(),
 	}
 }
 
 // NewMetricsViewWithUseCase はユースケースをバインドしたビューを返す
-func NewMetricsViewWithUseCase(useCase LeadTimeMetricsUseCase, config *models.MetricsConfig) *MetricsView {
+func NewMetricsViewWithUseCase(useCase LeadTimeMetricsUseCase, config ...*models.MetricsConfig) *MetricsView {
 	view := NewMetricsView()
 	view.useCase = useCase
-	view.config = config
-	if view.config == nil {
-		// デフォルト設定（全部表示）
-		view.config = &models.MetricsConfig{
-			ShowReviewPhases:     true,
-			ShowDayOfWeek:        true,
-			ShowWeeklyComparison: true,
-			ShowQualityIssues:    true,
-			ShowStagnantPRs:      true,
-			ShowRepositoryStats:  true,
-		}
+	if len(config) > 0 {
+		view.config = cloneMetricsConfig(config[0])
 	}
 	return view
 }
@@ -438,6 +443,9 @@ func (m *MetricsView) renderContentLines() []string {
 		return m.renderFilterModeUI()
 	}
 
+	lines = append(lines, m.renderOverallSection()...)
+	lines = append(lines, "")
+
 	if m.config.ShowReviewPhases {
 		lines = append(lines, m.renderReviewPhaseSection()...)
 		lines = append(lines, "")
@@ -513,6 +521,40 @@ func (m *MetricsView) renderFilterModeUI() []string {
 	lines = append(lines, "")
 	helpText := "Controls: j/k navigate • Enter apply filter • a show all • Esc cancel"
 	lines = append(lines, styles.HelpStyle.Render(helpText))
+
+	return lines
+}
+
+func (m *MetricsView) renderOverallSection() []string {
+	header := "Overall Lead Time"
+	stat := m.metrics.Overall
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("Lead Time - %s", m.filteredRepo)
+		if repoStat, ok := m.metrics.ByRepository[m.filteredRepo]; ok {
+			stat = repoStat
+		} else {
+			return []string{
+				styles.HeaderStyle.Render(header),
+				styles.MutedStyle.Render(fmt.Sprintf("No lead time data for %s.", m.filteredRepo)),
+			}
+		}
+	}
+
+	lines := []string{
+		styles.HeaderStyle.Render(header),
+	}
+
+	if stat.Count == 0 {
+		lines = append(lines, styles.MutedStyle.Render("No merged PRs in the selected period."))
+		return lines
+	}
+
+	lines = append(lines, fmt.Sprintf("Average: %s  Median: %s  PRs: %d",
+		formatDuration(stat.Average),
+		formatDuration(stat.Median),
+		stat.Count,
+	))
 
 	return lines
 }
