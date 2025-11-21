@@ -94,9 +94,7 @@ func TestMetricsViewViewContainsSections(t *testing.T) {
 	output := view.View()
 	assertContains(t, output, "Overall Metrics")
 	assertContains(t, output, "Per Repository")
-	assertContains(t, output, "Weekly Trend")
 	assertContains(t, output, "owner/repo-a")
-	assertContains(t, output, metrics.Trend[0].Period)
 }
 
 func TestMetricsViewErrorState(t *testing.T) {

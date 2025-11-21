@@ -3,7 +3,6 @@ package views
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -304,17 +303,7 @@ func (m *MetricsView) renderContentLines() []string {
 		lines = append(lines, styles.MutedStyle.Render(fmt.Sprintf("Last updated: %s", m.lastUpdated.Format("2006-01-02 15:04:05"))))
 	}
 
-	// Show alerts first if any
-	var alertLines []string
-	if m.metrics != nil {
-		alertLines = m.renderAlertsSection()
-	}
-	if len(alertLines) > 0 {
-		lines = append(lines, alertLines...)
-		lines = append(lines, "")
-	} else {
-		lines = append(lines, "")
-	}
+	lines = append(lines, "")
 
 	if m.loading {
 		lines = append(lines, styles.LoadingStyle.Render("Fetching lead time metrics..."))
@@ -337,44 +326,11 @@ func (m *MetricsView) renderContentLines() []string {
 
 	lines = append(lines, m.renderOverallSection()...)
 	lines = append(lines, "")
-	lines = append(lines, m.renderPhaseBreakdownSection()...)
-	lines = append(lines, "")
 	lines = append(lines, m.renderStagnantPRSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderRepositorySection()...)
 	lines = append(lines, "")
-	lines = append(lines, m.renderTrendSection()...)
-	lines = append(lines, "")
 	lines = append(lines, styles.HelpStyle.Render("Controls: j/k scroll • r refresh • q back"))
-
-	return lines
-}
-
-func (m *MetricsView) renderAlertsSection() []string {
-	if m.metrics == nil {
-		return []string{}
-	}
-
-	alerts := m.metrics.Alerts.Alerts
-
-	if len(alerts) == 0 {
-		return []string{}
-	}
-
-	lines := []string{
-		styles.HeaderStyle.Render("⚠️  Alerts"),
-	}
-
-	for _, alert := range alerts {
-		var style lipgloss.Style
-		if alert.Severity == "critical" {
-			style = styles.ErrorStyle
-		} else {
-			style = styles.WarningStyle
-		}
-
-		lines = append(lines, style.Render("• "+alert.Message))
-	}
 
 	return lines
 }
@@ -386,18 +342,6 @@ func (m *MetricsView) renderOverallSection() []string {
 		fmt.Sprintf("Average: %s", formatDuration(stat.Average)),
 		fmt.Sprintf("Median: %s", formatDuration(stat.Median)),
 		fmt.Sprintf("Total PRs: %d", stat.Count),
-	}
-	return lines
-}
-
-func (m *MetricsView) renderPhaseBreakdownSection() []string {
-	breakdown := m.metrics.PhaseBreakdown
-	lines := []string{
-		styles.HeaderStyle.Render("Review Process Breakdown (Average)"),
-		fmt.Sprintf("PR Created → First Review:   %s", formatDuration(breakdown.CreatedToFirstReview)),
-		fmt.Sprintf("First Review → Approved:     %s", formatDuration(breakdown.FirstReviewToApproval)),
-		fmt.Sprintf("Approved → Merged:           %s", formatDuration(breakdown.ApprovalToMerge)),
-		fmt.Sprintf("Total Lead Time:             %s", formatDuration(breakdown.TotalLeadTime)),
 	}
 	return lines
 }
@@ -460,59 +404,6 @@ func (m *MetricsView) renderRepositorySection() []string {
 			stat.Count,
 		)
 		lines = append(lines, line)
-	}
-
-	return lines
-}
-
-func (m *MetricsView) renderTrendSection() []string {
-	lines := []string{
-		styles.HeaderStyle.Render("Weekly Trend"),
-	}
-
-	trend := m.metrics.Trend
-	if len(trend) == 0 {
-		lines = append(lines, styles.MutedStyle.Render("No trend data available."))
-		return lines
-	}
-
-	maxAvg := time.Duration(0)
-	for _, point := range trend {
-		if point.AverageLeadTime > maxAvg {
-			maxAvg = point.AverageLeadTime
-		}
-	}
-	if maxAvg <= 0 {
-		maxAvg = time.Hour
-	}
-
-	barWidth := 20
-	if m.width > 40 {
-		dynamic := m.width - 32
-		if dynamic > barWidth {
-			barWidth = dynamic
-		}
-	}
-
-	for _, point := range trend {
-		ratio := float64(point.AverageLeadTime) / float64(maxAvg)
-		width := int(math.Round(ratio * float64(barWidth)))
-		if point.AverageLeadTime > 0 && width == 0 {
-			width = 1
-		}
-		if width > barWidth {
-			width = barWidth
-		}
-		bar := strings.Repeat("█", width)
-		lines = append(lines,
-			fmt.Sprintf("%s | %-*s %s (%d PRs)",
-				point.Period,
-				barWidth,
-				bar,
-				formatDuration(point.AverageLeadTime),
-				point.PRCount,
-			),
-		)
 	}
 
 	return lines
