@@ -19,8 +19,9 @@ const (
 )
 
 type leadTimeSample struct {
-	duration time.Duration
-	mergedAt time.Time
+	duration      time.Duration
+	mergedAt      time.Time
+	firstReviewAt *time.Time
 }
 
 // MetricsRepositoryImpl は MetricsRepository を実装する
@@ -50,9 +51,11 @@ func (r *MetricsRepositoryImpl) GetRateLimit(ctx context.Context) (*github.Rate,
 // FetchLeadTimeMetrics は複数リポジトリのリードタイムメトリクスを取得する
 func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos []string, since time.Time, progressFn func(models.MetricsProgress)) (*models.LeadTimeMetrics, error) {
 	result := &models.LeadTimeMetrics{
-		Overall:      models.LeadTimeStat{},
-		ByRepository: make(map[string]models.LeadTimeStat),
-		Trend:        []models.TrendPoint{},
+		Overall:               models.LeadTimeStat{},
+		ByRepository:          make(map[string]models.LeadTimeStat),
+		Trend:                 []models.TrendPoint{},
+		ByDayOfWeek:           make(map[time.Weekday]models.DayOfWeekStats),
+		ByRepositoryDayOfWeek: make(map[string]map[time.Weekday]models.DayOfWeekStats),
 	}
 
 	if len(repos) == 0 {
@@ -121,11 +124,13 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 	for slug, samples := range repoSamples {
 		durations := samplesToDurations(samples)
 		result.ByRepository[slug] = calculateLeadTimeStat(durations)
+		result.ByRepositoryDayOfWeek[slug] = aggregateByDayOfWeek(samples)
 		overallSamples = append(overallSamples, samples...)
 	}
 
 	allDurations := samplesToDurations(overallSamples)
 	result.Overall = calculateLeadTimeStat(allDurations)
+	result.ByDayOfWeek = aggregateByDayOfWeek(overallSamples)
 
 	// Fetch stagnant PR metrics
 	stagnantMetrics, err := r.fetchStagnantPRMetrics(ctx, repos, time.Now())
@@ -195,8 +200,9 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 			}
 
 			samples = append(samples, leadTimeSample{
-				duration: mergedAt.Sub(createdAt),
-				mergedAt: mergedAt,
+				duration:      mergedAt.Sub(createdAt),
+				mergedAt:      mergedAt,
+				firstReviewAt: r.fetchSampleFirstReview(ctx, owner, repo, pr.GetNumber()),
 			})
 		}
 
@@ -212,6 +218,77 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 	}
 
 	return samples, nil
+}
+
+func (r *MetricsRepositoryImpl) fetchSampleFirstReview(ctx context.Context, owner, repo string, number int) *time.Time {
+	firstReview, err := r.fetchFirstReviewTime(ctx, owner, repo, number)
+	if err != nil {
+		fmt.Printf("failed to fetch reviews for %s/%s#%d: %v\n", owner, repo, number, err)
+		return nil
+	}
+	return firstReview
+}
+
+func (r *MetricsRepositoryImpl) fetchFirstReviewTime(ctx context.Context, owner, repo string, number int) (*time.Time, error) {
+	opts := &github.ListOptions{PerPage: 100}
+	var first time.Time
+	found := false
+
+	for {
+		reviews, resp, err := r.client.client.PullRequests.ListReviews(ctx, owner, repo, number, opts)
+		if err != nil {
+			return nil, handleGitHubError(err, resp)
+		}
+
+		for _, review := range reviews {
+			if review == nil || review.SubmittedAt == nil {
+				continue
+			}
+			submitted := review.SubmittedAt.Time
+			if !found || submitted.Before(first) {
+				first = submitted
+				found = true
+			}
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	if !found {
+		return nil, nil
+	}
+
+	firstCopy := first
+	return &firstCopy, nil
+}
+
+func aggregateByDayOfWeek(samples []leadTimeSample) map[time.Weekday]models.DayOfWeekStats {
+	stats := make(map[time.Weekday]models.DayOfWeekStats, 7)
+
+	for _, sample := range samples {
+		mergeDay := sample.mergedAt.Weekday()
+		mergeStats := stats[mergeDay]
+		mergeStats.MergeCount++
+		stats[mergeDay] = mergeStats
+
+		if sample.firstReviewAt != nil {
+			reviewDay := sample.firstReviewAt.Weekday()
+			reviewStats := stats[reviewDay]
+			reviewStats.ReviewCount++
+			stats[reviewDay] = reviewStats
+		}
+	}
+
+	for day := time.Sunday; day <= time.Saturday; day++ {
+		if _, exists := stats[day]; !exists {
+			stats[day] = models.DayOfWeekStats{}
+		}
+	}
+
+	return stats
 }
 
 func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repos []string, now time.Time) (models.StagnantPRMetrics, error) {

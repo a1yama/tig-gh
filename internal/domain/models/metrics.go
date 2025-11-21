@@ -4,12 +4,14 @@ import "time"
 
 // LeadTimeMetrics はリードタイムに関する統計データを表す
 type LeadTimeMetrics struct {
-	Overall        LeadTimeStat            `json:"overall"`
-	ByRepository   map[string]LeadTimeStat `json:"by_repository"`
-	Trend          []TrendPoint            `json:"trend"`
-	PhaseBreakdown ReviewPhaseMetrics      `json:"phase_breakdown"` // 新規追加
-	StagnantPRs    StagnantPRMetrics       `json:"stagnant_prs"`    // 新規追加
-	Alerts         AlertMetrics            `json:"alerts"`          // 新規追加
+	Overall               LeadTimeStat                                `json:"overall"`
+	ByRepository          map[string]LeadTimeStat                     `json:"by_repository"`
+	Trend                 []TrendPoint                                `json:"trend"`
+	PhaseBreakdown        ReviewPhaseMetrics                          `json:"phase_breakdown"` // 新規追加
+	StagnantPRs           StagnantPRMetrics                           `json:"stagnant_prs"`    // 新規追加
+	Alerts                AlertMetrics                                `json:"alerts"`          // 新規追加
+	ByDayOfWeek           map[time.Weekday]DayOfWeekStats             `json:"by_day_of_week"`
+	ByRepositoryDayOfWeek map[string]map[time.Weekday]DayOfWeekStats  `json:"by_repository_day_of_week"`
 }
 
 // LeadTimeStat は単一リポジトリまたは全体の統計値
@@ -70,6 +72,12 @@ type Alert struct {
 // AlertMetrics はアラート情報の集合
 type AlertMetrics struct {
 	Alerts []Alert `json:"alerts"` // アラートのリスト
+}
+
+// DayOfWeekStats は曜日ごとのマージ/レビュー件数
+type DayOfWeekStats struct {
+	ReviewCount int `json:"review_count"`
+	MergeCount  int `json:"merge_count"`
 }
 
 // MetricsProgress はメトリクス収集の進捗状況を表す

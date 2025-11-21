@@ -415,6 +415,8 @@ func (m *MetricsView) renderContentLines() []string {
 
 	lines = append(lines, m.renderOverallSection()...)
 	lines = append(lines, "")
+	lines = append(lines, m.renderDayOfWeekSection()...)
+	lines = append(lines, "")
 	lines = append(lines, m.renderStagnantPRSection()...)
 	lines = append(lines, "")
 	lines = append(lines, m.renderRepositorySection()...)
@@ -522,6 +524,53 @@ func (m *MetricsView) renderStagnantPRSection() []string {
 			)
 		}
 	}
+
+	return lines
+}
+
+func (m *MetricsView) renderDayOfWeekSection() []string {
+	header := "Activity by Day of Week"
+	statsByDay := m.metrics.ByDayOfWeek
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("Activity by Day of Week (Filtered: %s)", m.filteredRepo)
+		if m.metrics.ByRepositoryDayOfWeek != nil {
+			statsByDay = m.metrics.ByRepositoryDayOfWeek[m.filteredRepo]
+		} else {
+			statsByDay = nil
+		}
+	}
+
+	lines := []string{
+		styles.HeaderStyle.Render(header),
+	}
+
+	if statsByDay == nil || len(statsByDay) == 0 {
+		if m.filteredRepo != "" {
+			lines = append(lines, styles.MutedStyle.Render(fmt.Sprintf("No day-of-week data available for %s.", m.filteredRepo)))
+		} else {
+			lines = append(lines, styles.MutedStyle.Render("No day-of-week data available."))
+		}
+		return lines
+	}
+
+	headers := make([]string, len(weekdayDisplayOrder))
+	for i, day := range weekdayDisplayOrder {
+		headers[i] = fmt.Sprintf("%4s", shortWeekday(day))
+	}
+	lines = append(lines, fmt.Sprintf("%-8s%s", "", strings.Join(headers, " ")))
+
+	mergeRow := "Merges  "
+	reviewRow := "Reviews "
+
+	for _, day := range weekdayDisplayOrder {
+		stats := statsByDay[day]
+		mergeRow += fmt.Sprintf("%4d", stats.MergeCount)
+		reviewRow += fmt.Sprintf("%4d", stats.ReviewCount)
+	}
+
+	lines = append(lines, mergeRow)
+	lines = append(lines, reviewRow)
 
 	return lines
 }
@@ -709,4 +758,22 @@ func formatDuration(d time.Duration) string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+var weekdayDisplayOrder = []time.Weekday{
+	time.Monday,
+	time.Tuesday,
+	time.Wednesday,
+	time.Thursday,
+	time.Friday,
+	time.Saturday,
+	time.Sunday,
+}
+
+func shortWeekday(day time.Weekday) string {
+	name := day.String()
+	if len(name) <= 3 {
+		return name
+	}
+	return name[:3]
 }
