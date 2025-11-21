@@ -18,6 +18,7 @@ import (
 const (
 	stagnantPRThreshold = 72 * time.Hour // 3 days
 	reviewWorkerCount   = 12             // concurrent review fetchers
+	repoWorkerCount     = 8              // concurrent repository fetchers
 )
 
 type leadTimeSample struct {
@@ -30,6 +31,24 @@ type leadTimeSample struct {
 // MetricsRepositoryImpl は MetricsRepository を実装する
 type MetricsRepositoryImpl struct {
 	client *Client
+}
+
+type repoFetchTask struct {
+	slug  string
+	owner string
+	name  string
+}
+
+type repoFetchResult struct {
+	slug    string
+	samples []leadTimeSample
+	err     error
+}
+
+type stagnantFetchResult struct {
+	repo string
+	prs  []models.StagnantPRInfo
+	err  error
 }
 
 // NewMetricsRepository は MetricsRepository 実装を生成する
@@ -67,59 +86,107 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 		return result, nil
 	}
 
-	var (
-		mu          sync.Mutex
-		repoSamples = make(map[string][]leadTimeSample)
-		errs        []error
-		wg          sync.WaitGroup
-	)
+	repoSamples := make(map[string][]leadTimeSample)
+	var errs []error
 
-	for i, repoFull := range repos {
+	totalRepos := len(repos)
+	processedRepos := 0
+
+	reportProgress := func(repo string) {
+		if progressFn == nil || totalRepos == 0 {
+			return
+		}
+		progressFn(models.MetricsProgress{
+			TotalRepos:     totalRepos,
+			ProcessedRepos: processedRepos,
+			CurrentRepo:    repo,
+		})
+	}
+
+	if progressFn != nil && totalRepos > 0 {
+		progressFn(models.MetricsProgress{
+			TotalRepos:     totalRepos,
+			ProcessedRepos: 0,
+			CurrentRepo:    "",
+		})
+	}
+
+	var tasks []repoFetchTask
+
+	for _, repoFull := range repos {
 		repoFull = strings.TrimSpace(repoFull)
 		if repoFull == "" {
 			continue
 		}
 
-		if progressFn != nil {
-			progressFn(models.MetricsProgress{
-				TotalRepos:     len(repos),
-				ProcessedRepos: i,
-				CurrentRepo:    repoFull,
-			})
-		}
-
 		owner, name, err := parseRepositorySlug(repoFull)
 		if err != nil {
-			mu.Lock()
 			errs = append(errs, err)
-			mu.Unlock()
+			processedRepos++
+			reportProgress(repoFull)
 			continue
 		}
 
-		wg.Add(1)
-		go func(slug, owner, name string) {
-			defer wg.Done()
-
-			samples, fetchErr := r.fetchLeadTimeSamples(ctx, owner, name, since)
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			if fetchErr != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", slug, fetchErr))
-				return
-			}
-
-			repoSamples[slug] = samples
-		}(repoFull, owner, name)
+		tasks = append(tasks, repoFetchTask{
+			slug:  repoFull,
+			owner: owner,
+			name:  name,
+		})
 	}
 
-	wg.Wait()
+	if len(tasks) > 0 {
+		workerCount := repoWorkerCount
+		if len(tasks) < workerCount {
+			workerCount = len(tasks)
+		}
 
-	if progressFn != nil {
+		jobs := make(chan repoFetchTask)
+		results := make(chan repoFetchResult)
+		var workers sync.WaitGroup
+
+		for i := 0; i < workerCount; i++ {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				for task := range jobs {
+					samples, fetchErr := r.fetchLeadTimeSamples(ctx, task.owner, task.name, since)
+					results <- repoFetchResult{
+						slug:    task.slug,
+						samples: samples,
+						err:     fetchErr,
+					}
+				}
+			}()
+		}
+
+		go func() {
+			for _, task := range tasks {
+				jobs <- task
+			}
+			close(jobs)
+		}()
+
+		go func() {
+			workers.Wait()
+			close(results)
+		}()
+
+		for result := range results {
+			if result.err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", result.slug, result.err))
+			} else {
+				repoSamples[result.slug] = result.samples
+			}
+
+			processedRepos++
+			reportProgress(result.slug)
+		}
+	}
+
+	if progressFn != nil && totalRepos > 0 {
 		progressFn(models.MetricsProgress{
-			TotalRepos:     len(repos),
-			ProcessedRepos: len(repos),
+			TotalRepos:     totalRepos,
+			ProcessedRepos: totalRepos,
 			CurrentRepo:    "",
 		})
 	}
@@ -130,17 +197,26 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 
 	for slug, samples := range repoSamples {
 		durations := samplesToDurations(samples)
+
 		result.ByRepository[slug] = calculateLeadTimeStat(durations)
+
 		result.ByRepositoryDayOfWeek[slug] = aggregateByDayOfWeek(samples)
+
 		result.ByRepositoryWeekly[slug] = calculateWeeklyComparison(samples, currentTime)
+
 		result.ByRepositoryPhaseBreakdown[slug] = calculatePhaseBreakdown(samples)
+
 		overallSamples = append(overallSamples, samples...)
 	}
 
 	allDurations := samplesToDurations(overallSamples)
+
 	result.Overall = calculateLeadTimeStat(allDurations)
+
 	result.ByDayOfWeek = aggregateByDayOfWeek(overallSamples)
+
 	result.WeeklyComparison = calculateWeeklyComparison(overallSamples, currentTime)
+
 	result.PhaseBreakdown = calculatePhaseBreakdown(overallSamples)
 
 	qualityIssues, qualityErr := r.analyzeOpenPRQuality(ctx, repos)
@@ -482,7 +558,7 @@ type scoredQualityIssue struct {
 }
 
 func (r *MetricsRepositoryImpl) analyzeOpenPRQuality(ctx context.Context, repos []string) (models.PRQualityIssues, error) {
-	var collected []scoredQualityIssue
+	var tasks []repoFetchTask
 
 	for _, repoSlug := range repos {
 		repoSlug = strings.TrimSpace(repoSlug)
@@ -495,37 +571,73 @@ func (r *MetricsRepositoryImpl) analyzeOpenPRQuality(ctx context.Context, repos 
 			continue
 		}
 
-		opts := &github.PullRequestListOptions{
-			State:     "open",
-			Sort:      "updated",
-			Direction: "desc",
-			ListOptions: github.ListOptions{
-				PerPage: 50,
-			},
-		}
+		tasks = append(tasks, repoFetchTask{
+			slug:  repoSlug,
+			owner: owner,
+			name:  repo,
+		})
+	}
 
-		for {
-			if err := ctx.Err(); err != nil {
-				return models.PRQualityIssues{}, err
-			}
+	if len(tasks) == 0 {
+		return models.PRQualityIssues{}, nil
+	}
 
-			prs, resp, err := r.client.client.PullRequests.List(ctx, owner, repo, opts)
-			if err != nil {
-				return models.PRQualityIssues{}, handleGitHubError(err, resp)
-			}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-			for _, pr := range prs {
-				if pr == nil {
+	workerCount := repoWorkerCount
+	if len(tasks) < workerCount {
+		workerCount = len(tasks)
+	}
+
+	var (
+		collected []scoredQualityIssue
+		colMu     sync.Mutex
+		errOnce   sync.Once
+		firstErr  error
+	)
+
+	jobs := make(chan repoFetchTask)
+	var workers sync.WaitGroup
+
+	for i := 0; i < workerCount; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for task := range jobs {
+				issues, err := r.fetchPRQualityIssuesForRepo(ctx, task.owner, task.name, task.slug)
+				if err != nil {
+					errOnce.Do(func() {
+						firstErr = err
+						cancel()
+					})
+					return
+				}
+				if len(issues) == 0 {
 					continue
 				}
-				collected = append(collected, collectQualityIssuesForPR(repoSlug, pr)...)
+				colMu.Lock()
+				collected = append(collected, issues...)
+				colMu.Unlock()
 			}
+		}()
+	}
 
-			if resp == nil || resp.NextPage == 0 {
-				break
+	go func() {
+		defer close(jobs)
+		for _, task := range tasks {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- task:
 			}
-			opts.Page = resp.NextPage
 		}
+	}()
+
+	workers.Wait()
+
+	if firstErr != nil {
+		return models.PRQualityIssues{}, firstErr
 	}
 
 	if len(collected) == 0 {
@@ -558,6 +670,44 @@ func (r *MetricsRepositoryImpl) analyzeOpenPRQuality(ctx context.Context, repos 
 	}
 
 	return models.PRQualityIssues{Issues: issues}, nil
+}
+
+func (r *MetricsRepositoryImpl) fetchPRQualityIssuesForRepo(ctx context.Context, owner, repo, slug string) ([]scoredQualityIssue, error) {
+	opts := &github.PullRequestListOptions{
+		State:     "open",
+		Sort:      "updated",
+		Direction: "desc",
+		ListOptions: github.ListOptions{
+			PerPage: 50,
+		},
+	}
+
+	var issues []scoredQualityIssue
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		prs, resp, err := r.client.client.PullRequests.List(ctx, owner, repo, opts)
+		if err != nil {
+			return nil, handleGitHubError(err, resp)
+		}
+
+		for _, pr := range prs {
+			if pr == nil {
+				continue
+			}
+			issues = append(issues, collectQualityIssuesForPR(slug, pr)...)
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return issues, nil
 }
 
 func collectQualityIssuesForPR(repoSlug string, pr *github.PullRequest) []scoredQualityIssue {
@@ -674,39 +824,106 @@ func formatQualityDetails(lines, files, commits int) string {
 func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repos []string, now time.Time) (models.StagnantPRMetrics, error) {
 	var allStagnantPRs []models.StagnantPRInfo
 
+	var tasks []repoFetchTask
 	for _, repoSlug := range repos {
+		repoSlug = strings.TrimSpace(repoSlug)
+		if repoSlug == "" {
+			continue
+		}
+
 		owner, repo, err := parseRepositorySlug(repoSlug)
 		if err != nil {
 			continue
 		}
 
-		opts := &github.PullRequestListOptions{
-			State:       "open",
-			Sort:        "created",
-			Direction:   "asc",
-			ListOptions: github.ListOptions{PerPage: 100},
-		}
+		tasks = append(tasks, repoFetchTask{
+			slug:  repoSlug,
+			owner: owner,
+			name:  repo,
+		})
+	}
 
-		prs, _, err := r.client.client.PullRequests.List(ctx, owner, repo, opts)
-		if err != nil {
+	if len(tasks) == 0 {
+		return models.StagnantPRMetrics{
+			Threshold: stagnantPRThreshold,
+		}, nil
+	}
+
+	workerCount := repoWorkerCount
+	if len(tasks) < workerCount {
+		workerCount = len(tasks)
+	}
+
+	jobs := make(chan repoFetchTask)
+	results := make(chan stagnantFetchResult)
+	var workers sync.WaitGroup
+
+	for i := 0; i < workerCount; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for task := range jobs {
+				opts := &github.PullRequestListOptions{
+					State:       "open",
+					Sort:        "created",
+					Direction:   "asc",
+					ListOptions: github.ListOptions{PerPage: 100},
+				}
+
+				prs, resp, err := r.client.client.PullRequests.List(ctx, task.owner, task.name, opts)
+				if err != nil {
+					results <- stagnantFetchResult{
+						repo: task.slug,
+						err:  handleGitHubError(err, resp),
+					}
+					continue
+				}
+
+				var stagnant []models.StagnantPRInfo
+				for _, pr := range prs {
+					if pr == nil || pr.CreatedAt == nil {
+						continue
+					}
+
+					age := now.Sub(pr.CreatedAt.Time)
+					if age >= stagnantPRThreshold {
+						stagnant = append(stagnant, models.StagnantPRInfo{
+							Repository: task.slug,
+							Number:     pr.GetNumber(),
+							Title:      pr.GetTitle(),
+							Age:        age,
+						})
+					}
+				}
+
+				results <- stagnantFetchResult{
+					repo: task.slug,
+					prs:  stagnant,
+				}
+			}
+		}()
+	}
+
+	go func() {
+		for _, task := range tasks {
+			jobs <- task
+		}
+		close(jobs)
+	}()
+
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+
+	for result := range results {
+		if result.err != nil {
+			fmt.Printf("failed to fetch stagnant PR metrics for %s: %v\n", result.repo, result.err)
 			continue
 		}
 
-		for _, pr := range prs {
-			if pr == nil || pr.CreatedAt == nil {
-				continue
-			}
-
-			age := now.Sub(pr.CreatedAt.Time)
-
-			if age >= stagnantPRThreshold {
-				allStagnantPRs = append(allStagnantPRs, models.StagnantPRInfo{
-					Repository: repoSlug,
-					Number:     pr.GetNumber(),
-					Title:      pr.GetTitle(),
-					Age:        age,
-				})
-			}
+		if len(result.prs) > 0 {
+			allStagnantPRs = append(allStagnantPRs, result.prs...)
 		}
 	}
 
