@@ -708,20 +708,19 @@ func (m *MetricsView) renderWeeklyComparisonSection() []string {
 	return lines
 }
 
+const maxQualityIssuesToDisplay = 5
+
 type qualityIssueDisplay struct {
-	index int
 	issue models.PRQualityIssue
 }
 
 func (m *MetricsView) renderPRQualitySection() []string {
-	lines := []string{
-		styles.HeaderStyle.Render("PR Quality Issues (Top 10)"),
-	}
-
 	issues := m.metrics.QualityIssues.Issues
 	if len(issues) == 0 {
-		lines = append(lines, styles.MutedStyle.Render("No PR quality issues detected."))
-		return lines
+		return []string{
+			styles.HeaderStyle.Render("PR Quality Issues (0 issues)"),
+			styles.MutedStyle.Render("No PR quality issues detected."),
+		}
 	}
 
 	filtered := issues
@@ -733,21 +732,39 @@ func (m *MetricsView) renderPRQualitySection() []string {
 			}
 		}
 		if len(filtered) == 0 {
-			lines = append(lines, styles.MutedStyle.Render(fmt.Sprintf("No PR quality issues found for %s.", m.filteredRepo)))
-			return lines
+			return []string{
+				styles.HeaderStyle.Render("PR Quality Issues (0 issues)"),
+				styles.MutedStyle.Render(fmt.Sprintf("No PR quality issues found for %s.", m.filteredRepo)),
+			}
 		}
 	}
 
 	var high, medium []qualityIssueDisplay
-	for idx, issue := range filtered {
-		entry := qualityIssueDisplay{
-			index: idx + 1,
-			issue: issue,
-		}
+	for _, issue := range filtered {
+		entry := qualityIssueDisplay{issue: issue}
 		if strings.EqualFold(issue.Severity, "high") {
 			high = append(high, entry)
 		} else {
 			medium = append(medium, entry)
+		}
+	}
+
+	displayCount := len(filtered)
+	if displayCount > maxQualityIssuesToDisplay {
+		displayCount = maxQualityIssuesToDisplay
+	}
+
+	lines := []string{
+		styles.HeaderStyle.Render(fmt.Sprintf("PR Quality Issues (%d issues)", displayCount)),
+	}
+
+	if len(high) > displayCount {
+		high = high[:displayCount]
+		medium = nil
+	} else {
+		remaining := displayCount - len(high)
+		if remaining < len(medium) {
+			medium = medium[:remaining]
 		}
 	}
 
@@ -768,21 +785,95 @@ func (m *MetricsView) renderPRQualitySection() []string {
 }
 
 func (m *MetricsView) renderQualityIssueList(items []qualityIssueDisplay) []string {
-	var lines []string
-	for i, entry := range items {
-		detail := entry.issue.Details
-		header := fmt.Sprintf("  %d. %s #%d", entry.index, entry.issue.Repository, entry.issue.Number)
-		if detail != "" {
-			header = fmt.Sprintf("%s (%s)", header, detail)
+	if len(items) == 0 {
+		return nil
+	}
+
+	const (
+		repoWidth   = 18
+		numberWidth = 7
+		typeWidth   = 16
+		detailWidth = 28
+	)
+
+	header := fmt.Sprintf(
+		"%-*s %-*s %-*s %-*s %s",
+		repoWidth, "Repo",
+		numberWidth, "#",
+		typeWidth, "Type",
+		detailWidth, "Details",
+		"Recommendation",
+	)
+
+	lines := []string{styles.MutedStyle.Render(header)}
+
+	for _, entry := range items {
+		repo := trimColumnText(entry.issue.Repository, repoWidth)
+		number := fmt.Sprintf("#%d", entry.issue.Number)
+		issueType := trimColumnText(entry.issue.IssueType, typeWidth)
+		if issueType == "" {
+			issueType = "-"
 		}
-		lines = append(lines, header)
-		lines = append(lines, fmt.Sprintf("     ⚠️  %s", entry.issue.Reason))
-		lines = append(lines, fmt.Sprintf("     💡 %s", entry.issue.Recommendation))
-		if i < len(items)-1 {
-			lines = append(lines, "")
+		details := trimColumnText(entry.issue.Details, detailWidth)
+		if details == "" {
+			details = "-"
+		}
+		recommendation := normalizeRecommendation(entry.issue.Recommendation)
+
+		row := fmt.Sprintf(
+			"%-*s %-*s %-*s %-*s %s",
+			repoWidth, repo,
+			numberWidth, number,
+			typeWidth, issueType,
+			detailWidth, details,
+			recommendation,
+		)
+		lines = append(lines, row)
+	}
+
+	return lines
+}
+
+func singleLineText(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func trimColumnText(value string, width int) string {
+	value = singleLineText(value)
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width <= 3 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-3]) + "..."
+}
+
+func normalizeRecommendation(value string) string {
+	text := singleLineText(value)
+	if text == "" {
+		return "-"
+	}
+
+	prefixes := []string{"推奨:", "Recommendation:"}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(text, prefix) {
+			text = strings.TrimSpace(strings.TrimPrefix(text, prefix))
 		}
 	}
-	return lines
+
+	if text == "" {
+		return "-"
+	}
+	return text
 }
 
 func (m *MetricsView) renderRepositorySection() []string {
