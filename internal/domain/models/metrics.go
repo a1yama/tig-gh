@@ -2,6 +2,16 @@ package models
 
 import "time"
 
+// PRLeadTimeEntry はマージ済み個別PRのリードタイム情報を表す
+type PRLeadTimeEntry struct {
+	Repository string        `json:"repository"`
+	Number     int           `json:"number"`
+	Title      string        `json:"title"`
+	LeadTime   time.Duration `json:"lead_time"`
+	MergedAt   time.Time     `json:"merged_at"`
+	HTMLURL    string        `json:"html_url"`
+}
+
 // LeadTimeMetrics はリードタイムに関する統計データを表す
 type LeadTimeMetrics struct {
 	Overall                    LeadTimeStat                               `json:"overall"`
@@ -16,6 +26,7 @@ type LeadTimeMetrics struct {
 	WeeklyComparison           WeeklyComparison                           `json:"weekly_comparison"`
 	ByRepositoryWeekly         map[string]WeeklyComparison                `json:"by_repository_weekly"`
 	QualityIssues              PRQualityIssues                            `json:"quality_issues"`
+	PRLeadTimes                []PRLeadTimeEntry                          `json:"pr_lead_times"`
 }
 
 // LeadTimeStat は単一リポジトリまたは全体の統計値

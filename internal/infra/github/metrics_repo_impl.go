@@ -26,11 +26,15 @@ type leadTimeSample struct {
 	mergedAt      time.Time
 	firstReviewAt *time.Time
 	approvedAt    *time.Time
+	number        int
+	title         string
+	htmlURL       string
 }
 
 // MetricsRepositoryImpl は MetricsRepository を実装する
 type MetricsRepositoryImpl struct {
-	client *Client
+	client             *Client
+	excludeBaseBranches map[string]struct{}
 }
 
 type repoFetchTask struct {
@@ -52,8 +56,15 @@ type stagnantFetchResult struct {
 }
 
 // NewMetricsRepository は MetricsRepository 実装を生成する
-func NewMetricsRepository(client *Client) repository.MetricsRepository {
-	return &MetricsRepositoryImpl{client: client}
+func NewMetricsRepository(client *Client, excludeBranches []string) repository.MetricsRepository {
+	exclude := make(map[string]struct{}, len(excludeBranches))
+	for _, b := range excludeBranches {
+		exclude[b] = struct{}{}
+	}
+	return &MetricsRepositoryImpl{
+		client:             client,
+		excludeBaseBranches: exclude,
+	}
 }
 
 // GetRateLimit returns the current GitHub API rate limit status
@@ -192,6 +203,7 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 	}
 
 	var overallSamples []leadTimeSample
+	var allPRLeadTimes []models.PRLeadTimeEntry
 
 	currentTime := time.Now()
 
@@ -206,8 +218,25 @@ func (r *MetricsRepositoryImpl) FetchLeadTimeMetrics(ctx context.Context, repos 
 
 		result.ByRepositoryPhaseBreakdown[slug] = calculatePhaseBreakdown(samples)
 
+		for _, s := range samples {
+			allPRLeadTimes = append(allPRLeadTimes, models.PRLeadTimeEntry{
+				Repository: slug,
+				Number:     s.number,
+				Title:      s.title,
+				LeadTime:   s.duration,
+				MergedAt:   s.mergedAt,
+				HTMLURL:    s.htmlURL,
+			})
+		}
+
 		overallSamples = append(overallSamples, samples...)
 	}
+
+	// リードタイムの降順（長い順）でソート
+	sort.Slice(allPRLeadTimes, func(i, j int) bool {
+		return allPRLeadTimes[i].LeadTime > allPRLeadTimes[j].LeadTime
+	})
+	result.PRLeadTimes = allPRLeadTimes
 
 	allDurations := samplesToDurations(overallSamples)
 
@@ -279,7 +308,11 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 				continue
 			}
 
-			if base := pr.GetBase(); base == nil || base.GetRef() != defaultBranch {
+			base := pr.GetBase()
+			if base == nil || base.GetRef() != defaultBranch {
+				continue
+			}
+			if _, excluded := r.excludeBaseBranches[base.GetRef()]; excluded {
 				continue
 			}
 
@@ -297,6 +330,9 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 			samples = append(samples, leadTimeSample{
 				duration: mergedAt.Sub(createdAt),
 				mergedAt: mergedAt,
+				number:   pr.GetNumber(),
+				title:    pr.GetTitle(),
+				htmlURL:  pr.GetHTMLURL(),
 			})
 			lastIdx := len(samples) - 1
 			reviewRequests = append(reviewRequests, reviewRequest{
@@ -698,6 +734,11 @@ func (r *MetricsRepositoryImpl) fetchPRQualityIssuesForRepo(ctx context.Context,
 			if pr == nil {
 				continue
 			}
+			if base := pr.GetBase(); base != nil {
+				if _, excluded := r.excludeBaseBranches[base.GetRef()]; excluded {
+					continue
+				}
+			}
 			issues = append(issues, collectQualityIssuesForPR(slug, pr)...)
 		}
 
@@ -883,6 +924,11 @@ func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repo
 				for _, pr := range prs {
 					if pr == nil || pr.CreatedAt == nil {
 						continue
+					}
+					if base := pr.GetBase(); base != nil {
+						if _, excluded := r.excludeBaseBranches[base.GetRef()]; excluded {
+							continue
+						}
 					}
 
 					age := now.Sub(pr.CreatedAt.Time)

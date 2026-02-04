@@ -66,6 +66,13 @@ type MetricsConfig struct {
 
 	// ShowRepositoryStats はリポジトリごとの統計の表示/非表示
 	ShowRepositoryStats bool `mapstructure:"show_repository_stats" yaml:"show_repository_stats"`
+
+	// ShowPRLeadTimes はPRリードタイム一覧の表示/非表示
+	ShowPRLeadTimes bool `mapstructure:"show_pr_lead_times" yaml:"show_pr_lead_times"`
+
+	// ExcludeBaseBranches は除外するベースブランチ名のリスト
+	// ここに指定されたブランチがデフォルトブランチであるリポジトリのPRは計測対象外になる
+	ExcludeBaseBranches []string `mapstructure:"exclude_base_branches" yaml:"exclude_base_branches"`
 }
 
 // UIConfig はUI関連の設定を表す
@@ -168,6 +175,8 @@ func DefaultConfig() *Config {
 			ShowQualityIssues:    true,
 			ShowStagnantPRs:      true,
 			ShowRepositoryStats:  true,
+			ShowPRLeadTimes:      true,
+			ExcludeBaseBranches: []string{},
 		},
 	}
 }
