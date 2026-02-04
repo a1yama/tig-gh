@@ -25,6 +25,17 @@ func main() {
 		os.Exit(0)
 	}
 
+	// --metrics フラグの検出
+	metricsOnly := false
+	var filteredArgs []string
+	for _, arg := range os.Args[1:] {
+		if arg == "--metrics" {
+			metricsOnly = true
+		} else {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+
 	// 設定を読み込む
 	if err := config.Load(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Could not load config: %v\n", err)
@@ -50,16 +61,16 @@ func main() {
 	var err error
 
 	// コマンドライン引数からowner/repoを取得
-	if len(os.Args) > 1 && os.Args[1] != "--version" && os.Args[1] != "-v" {
+	if len(filteredArgs) > 0 {
 		// owner/repo形式のパース
-		arg := os.Args[1]
+		arg := filteredArgs[0]
 		parts := strings.Split(arg, "/")
 		if len(parts) == 2 {
 			owner = parts[0]
 			repo = parts[1]
 		} else {
 			fmt.Fprintf(os.Stderr, "Error: Invalid repository format.\n")
-			fmt.Fprintf(os.Stderr, "Usage: tig-gh [owner/repo]\n")
+			fmt.Fprintf(os.Stderr, "Usage: tig-gh [owner/repo] [--metrics]\n")
 			fmt.Fprintf(os.Stderr, "\nExample:\n")
 			fmt.Fprintf(os.Stderr, "  tig-gh charmbracelet/bubbletea\n")
 			os.Exit(1)
@@ -137,7 +148,7 @@ func main() {
 	basePRRepo := github.NewPullRequestRepository(githubClient)
 	commitRepo := github.NewCommitRepository(githubClient)
 	searchRepo := github.NewSearchRepository(githubClient)
-	metricsRepo := github.NewMetricsRepository(githubClient)
+	metricsRepo := github.NewMetricsRepository(githubClient, cfg.Metrics.ExcludeBaseBranches)
 
 	// キャッシュでラップ
 	var issueRepo repository.IssueRepository
@@ -170,6 +181,7 @@ func main() {
 		repo,
 		cfg.UI.DefaultView,
 		&cfg.Metrics,
+		metricsOnly,
 	)
 
 	// bubbletea プログラムの起動

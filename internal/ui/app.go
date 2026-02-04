@@ -45,6 +45,7 @@ type App struct {
 	searchViewInited    bool
 	metricsViewInited   bool
 	lastPrimaryView     ViewType
+	metricsOnly         bool
 }
 
 // NewApp creates a new application instance (for backward compatibility)
@@ -73,7 +74,20 @@ func NewAppWithUseCases(
 	owner, repo string,
 	defaultView string,
 	metricsConfig *models.MetricsConfig,
+	metricsOnly bool,
 ) *App {
+	if metricsOnly {
+		return &App{
+			currentView:         MetricsView,
+			metricsView:         views.NewMetricsViewWithUseCase(fetchMetricsUseCase, metricsConfig),
+			fetchMetricsUseCase: fetchMetricsUseCase,
+			owner:               owner,
+			repo:                repo,
+			ready:               false,
+			metricsOnly:         true,
+		}
+	}
+
 	// デフォルトビューを決定
 	var initialView ViewType
 	switch defaultView {
@@ -107,6 +121,11 @@ func NewAppWithUseCases(
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
+	if a.metricsOnly {
+		a.metricsViewInited = true
+		return a.metricsView.Init()
+	}
+
 	switch a.currentView {
 	case PullRequestListView:
 		a.prViewInited = true
@@ -127,12 +146,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case views.MetricsExitMsg:
+		if a.metricsOnly {
+			return a, tea.Quit
+		}
 		if a.currentView == MetricsView {
 			a.currentView = a.lastPrimaryView
 		}
 		return a, nil
 
 	case tea.KeyMsg:
+		// メトリクスのみモード: ビュー切り替えキーを無視し、q/ctrl+cで終了
+		if a.metricsOnly {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return a.delegateToCurrentView(msg)
+			case "i", "p", "R", "c", "m", "/":
+				return a, nil
+			default:
+				return a.delegateToCurrentView(msg)
+			}
+		}
+
 		// Check if we're in search view with input focused
 		// If so, skip global key bindings except for special cases
 		if a.currentView == SearchView {
@@ -220,6 +254,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.ready = true
+
+		if a.metricsOnly {
+			a.metricsView, cmd = a.metricsView.Update(msg)
+			return a, cmd
+		}
 
 		// Propagate size to all views
 		a.issueView, cmd = a.issueView.Update(msg)
