@@ -3,6 +3,8 @@ package views
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -56,6 +58,8 @@ type MetricsView struct {
 	filterMode        bool   // フィルタモード中かどうか
 	filteredRepo      string // フィルタ中のリポジトリ（空なら全体表示）
 	selectedRepoIndex int    // フィルタモード中の選択インデックス
+	prBrowseMode      bool   // PRブラウズモード中かどうか
+	selectedPRIndex   int    // PRブラウズモード中の選択インデックス
 	config            *models.MetricsConfig
 }
 
@@ -244,6 +248,11 @@ func (m *MetricsView) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFilterModeKey(msg)
 	}
 
+	// PRブラウズモード中の処理
+	if m.prBrowseMode {
+		return m.handlePRBrowseModeKey(msg)
+	}
+
 	// 通常モードの処理
 	switch msg.String() {
 	case "ctrl+c":
@@ -258,6 +267,17 @@ func (m *MetricsView) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// 全体表示に戻る
 		m.filteredRepo = ""
 		m.scroll = 0
+		return m, nil
+	case "o":
+		// PRブラウズモードに入る
+		if m.metrics != nil && m.config.ShowPRLeadTimes {
+			entries := m.getFilteredPRLeadTimes()
+			if len(entries) > 0 {
+				m.prBrowseMode = true
+				m.selectedPRIndex = 0
+				m.updateStatusBar()
+			}
+		}
 		return m, nil
 	case "r":
 		if !m.loading {
@@ -333,6 +353,79 @@ func (m *MetricsView) handleFilterModeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *MetricsView) handlePRBrowseModeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	entries := m.getFilteredPRLeadTimes()
+	if len(entries) == 0 {
+		m.prBrowseMode = false
+		m.updateStatusBar()
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.prBrowseMode = false
+		m.updateStatusBar()
+		return m, nil
+	case "j", "down":
+		if m.selectedPRIndex < len(entries)-1 {
+			m.selectedPRIndex++
+		}
+		return m, nil
+	case "k", "up":
+		if m.selectedPRIndex > 0 {
+			m.selectedPRIndex--
+		}
+		return m, nil
+	case "enter":
+		if m.selectedPRIndex >= 0 && m.selectedPRIndex < len(entries) {
+			url := entries[m.selectedPRIndex].HTMLURL
+			if url != "" {
+				openBrowser(url)
+			}
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	default:
+		cmd = exec.Command("open", url)
+	}
+	_ = cmd.Start()
+}
+
+func (m *MetricsView) getFilteredPRLeadTimes() []models.PRLeadTimeEntry {
+	if m.metrics == nil {
+		return nil
+	}
+
+	entries := m.metrics.PRLeadTimes
+	if m.filteredRepo != "" {
+		filtered := make([]models.PRLeadTimeEntry, 0)
+		for _, e := range entries {
+			if e.Repository == m.filteredRepo {
+				filtered = append(filtered, e)
+			}
+		}
+		entries = filtered
+	}
+
+	maxDisplay := 20
+	if len(entries) > maxDisplay {
+		entries = entries[:maxDisplay]
+	}
+
+	return entries
 }
 
 func (m *MetricsView) enterFilterMode() {
@@ -446,6 +539,11 @@ func (m *MetricsView) renderContentLines() []string {
 	lines = append(lines, m.renderOverallSection()...)
 	lines = append(lines, "")
 
+	if m.config.ShowPRLeadTimes {
+		lines = append(lines, m.renderPRLeadTimeSection()...)
+		lines = append(lines, "")
+	}
+
 	if m.config.ShowReviewPhases {
 		lines = append(lines, m.renderReviewPhaseSection()...)
 		lines = append(lines, "")
@@ -472,7 +570,7 @@ func (m *MetricsView) renderContentLines() []string {
 	}
 
 	// ヘルプテキストを更新
-	helpText := "Controls: j/k scroll • r refresh • f filter • a show all • q back"
+	helpText := "Controls: j/k scroll • r refresh • f filter • o browse PRs • a show all • q back"
 	lines = append(lines, styles.HelpStyle.Render(helpText))
 
 	return lines
@@ -521,6 +619,59 @@ func (m *MetricsView) renderFilterModeUI() []string {
 	lines = append(lines, "")
 	helpText := "Controls: j/k navigate • Enter apply filter • a show all • Esc cancel"
 	lines = append(lines, styles.HelpStyle.Render(helpText))
+
+	return lines
+}
+
+func (m *MetricsView) renderPRLeadTimeSection() []string {
+	entries := m.getFilteredPRLeadTimes()
+
+	header := "PR Lead Times (Open → Merge)"
+	if !m.prBrowseMode {
+		header += "                              Press 'o' to browse"
+	}
+
+	lines := []string{
+		styles.HeaderStyle.Render(header),
+	}
+
+	if len(entries) == 0 {
+		lines = append(lines, styles.MutedStyle.Render("No PR lead time data available."))
+		return lines
+	}
+
+	for idx, entry := range entries {
+		prefix := "   "
+		if m.prBrowseMode && idx == m.selectedPRIndex {
+			prefix = ">  "
+		}
+
+		leadTimeStr := fmt.Sprintf("%7s", formatDuration(entry.LeadTime))
+		repoAndNumber := fmt.Sprintf("%s #%d", entry.Repository, entry.Number)
+		title := trimColumnText(entry.Title, 30)
+		mergedDate := entry.MergedAt.Format("2006-01-02")
+
+		line := fmt.Sprintf("%s%2d. %s  %-30s  %-30s  (%s)",
+			prefix,
+			idx+1,
+			leadTimeStr,
+			repoAndNumber,
+			title,
+			mergedDate,
+		)
+
+		if m.prBrowseMode && idx == m.selectedPRIndex {
+			selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+			line = selectedStyle.Render(line)
+		}
+
+		lines = append(lines, line)
+	}
+
+	if m.prBrowseMode {
+		lines = append(lines, "")
+		lines = append(lines, styles.HelpStyle.Render("Controls: j/k navigate • Enter open in browser • Esc cancel"))
+	}
 
 	return lines
 }
@@ -1019,6 +1170,8 @@ func (m *MetricsView) updateStatusBar() {
 
 	mode := "Metrics"
 	switch {
+	case m.prBrowseMode:
+		mode = "PR Browse"
 	case m.filterMode:
 		mode = "Filter"
 	case m.loading:
@@ -1031,7 +1184,10 @@ func (m *MetricsView) updateStatusBar() {
 	m.statusBar.SetMode(mode)
 
 	var status string
-	if m.filterMode {
+	if m.prBrowseMode {
+		entries := m.getFilteredPRLeadTimes()
+		status = fmt.Sprintf("Browsing PRs (%d/%d)", m.selectedPRIndex+1, len(entries))
+	} else if m.filterMode {
 		status = "Select repository to filter"
 	} else if m.loading {
 		if m.progress != nil && m.progress.TotalRepos > 0 {
@@ -1080,7 +1236,11 @@ func (m *MetricsView) updateStatusBar() {
 	m.statusBar.SetMessage(status)
 
 	m.statusBar.ClearItems()
-	if m.filterMode {
+	if m.prBrowseMode {
+		m.statusBar.AddItem("j/k", "navigate")
+		m.statusBar.AddItem("Enter", "open in browser")
+		m.statusBar.AddItem("Esc", "cancel")
+	} else if m.filterMode {
 		m.statusBar.AddItem("j/k", "navigate")
 		m.statusBar.AddItem("Enter", "apply")
 		m.statusBar.AddItem("a", "show all")
