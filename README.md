@@ -80,6 +80,11 @@ metrics:
   lead_time_enabled: true
   calculation_period: 720h  # 30日間（720h=30日, 2160h=90日）
 
+  # 除外するベースブランチ（デフォルトブランチがこれに該当するリポジトリのPRは計測対象外）
+  exclude_base_branches:
+    - develop
+    - staging
+
 ui:
   theme: dark  # dark / light / auto
   default_view: issues
@@ -106,6 +111,10 @@ tig-gh
 
 # 任意のリポジトリを明示指定
 tig-gh owner/repo
+
+# メトリクスビューのみで起動（他のビューへの切り替えなし、qで終了）
+tig-gh --metrics
+tig-gh owner/repo --metrics
 
 # バージョンを表示
 tig-gh --version
@@ -158,27 +167,32 @@ tig-gh --version
 
 #### 表示内容
 
-1. **Review Phase Breakdown（レビューフェーズ分解）**
+1. **PR Lead Times（PRリードタイム一覧）**
+   - マージ済みPRのリードタイムを長い順に最大20件表示
+   - リポジトリ、PR番号、タイトル、リードタイム、マージ日時を一覧表示
+   - `o`キーでPRブラウズモードに入り、`Enter`でブラウザで開く
+
+2. **Review Phase Breakdown（レビューフェーズ分解）**
    - PR作成 → 初回レビュー → 承認 → マージまでの平均所要時間
    - フェーズごとの割合で、停滞しやすい工程を可視化
 
-2. **Day-of-Week Activity（曜日別活動）**
+3. **Day-of-Week Activity（曜日別活動）**
    - 曜日ごとのレビュー数・マージ数
    - 曜日パターンを把握し、負荷が集中する曜日を把握
 
-3. **Weekly Comparison（週次比較）**
+4. **Weekly Comparison（週次比較）**
    - 今週と先週の主要メトリクスを比較
    - 増減率（%）で改善トレンドを確認
 
-4. **PR Quality Issues（PRクオリティチェック）**
+5. **PR Quality Issues（PRクオリティチェック）**
    - 大規模PRや説明不足PRを自動検知
    - テンプレ違反・レビュアー不足など注意点を一覧化
 
-5. **Stagnant PRs（滞留PR）**
+6. **Stagnant PRs（滞留PR）**
    - 3日以上オープンなPR総数
    - 最も古い滞留PR（リポジトリ・PR番号・経過時間）
 
-6. **Per Repository（リポジトリ別）**
+7. **Per Repository（リポジトリ別）**
    - 各リポジトリの平均・中央値・PR数
 
 #### 操作
@@ -188,19 +202,28 @@ tig-gh --version
 - `r`: メトリクスを再取得（最新化）
 - `l`: GitHub APIレート制限を即座に表示
 - `f`: リポジトリフィルタをトグル（対象リポジトリを絞り込み）
-- `q`: 前の画面に戻る
+- `o`: PRブラウズモードに入る（PRリードタイム一覧を操作）
+  - `j` / `k`: PR選択を移動
+  - `Enter`: 選択したPRをブラウザで開く
+  - `Esc`: ブラウズモードを終了
+- `a`: フィルタを解除（全リポジトリ表示に戻す）
+- `q`: 前の画面に戻る（`--metrics`モードでは終了）
 
 #### 設定
 
 ```yaml
 metrics:
-  calculation_period: 336h  # 14 days (updated default)
-  show_review_phases: true
-  show_day_of_week: true
-  show_weekly_comparison: true
-  show_quality_issues: true
-  show_stagnant_prs: true
-  show_repository_stats: true
+  calculation_period: 720h  # 30日間（336h=14日、720h=30日）
+  show_pr_lead_times: true       # PRリードタイム一覧の表示
+  show_review_phases: true       # レビューフェーズ分解の表示
+  show_day_of_week: true         # 曜日別活動の表示
+  show_weekly_comparison: true   # 週次比較の表示
+  show_quality_issues: true      # PRクオリティチェックの表示
+  show_stagnant_prs: true        # 滞留PRの表示
+  show_repository_stats: true    # リポジトリ別統計の表示
+  exclude_base_branches:         # 除外するベースブランチ
+    - develop
+    - staging
 ```
 
 #### パフォーマンスとプログレス表示
@@ -215,6 +238,15 @@ metrics:
 - `calculation_period` を短縮（例: `336h` → `168h` で7日間に短縮）
 
 #### 活用例
+
+**PRリードタイム一覧でボトルネックPRを特定:**
+- PR Lead Timesで時間がかかったPRを確認
+- リードタイムが長いPRのパターンを分析し、改善策を検討
+- `o`キーでブラウズモード → `Enter`で該当PRの詳細を確認
+
+**除外ブランチでメトリクスを正確化:**
+- `exclude_base_branches`でdevelop/stagingなど本番以外のブランチを除外
+- 本番リリースフローのみを正確に計測
 
 **レビューフェーズ分解でボトルネック特定:**
 - Review Phase Breakdownで各フェーズの滞留時間を確認
