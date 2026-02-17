@@ -61,6 +61,8 @@ type MetricsView struct {
 	prBrowseMode      bool   // PRブラウズモード中かどうか
 	selectedPRIndex   int    // PRブラウズモード中の選択インデックス
 	config            *models.MetricsConfig
+	copySuccess       bool   // コピー成功フラグ
+	copyMessage       string // コピー成功メッセージ
 }
 
 func defaultMetricsConfig() *models.MetricsConfig {
@@ -279,6 +281,20 @@ func (m *MetricsView) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case "y":
+		// メトリクスをMarkdown形式でクリップボードにコピー
+		if m.metrics != nil && !m.loading {
+			markdown := m.toMarkdown()
+			if err := copyToClipboard(markdown); err != nil {
+				m.copySuccess = false
+				m.copyMessage = fmt.Sprintf("Failed to copy: %v", err)
+			} else {
+				m.copySuccess = true
+				m.copyMessage = "Metrics copied to clipboard as Markdown"
+			}
+			m.updateStatusBar()
+		}
+		return m, nil
 	case "r":
 		if !m.loading {
 			m.loading = true
@@ -291,12 +307,18 @@ func (m *MetricsView) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l": // Show rate limit
 		return m, m.fetchRateLimitCmd()
 	case "j", "down":
+		// コピーメッセージをクリア
+		m.copySuccess = false
+		m.copyMessage = ""
 		maxScroll := m.maxScroll()
 		if m.scroll < maxScroll {
 			m.scroll++
 		}
 		return m, nil
 	case "k", "up":
+		// コピーメッセージをクリア
+		m.copySuccess = false
+		m.copyMessage = ""
 		if m.scroll > 0 {
 			m.scroll--
 		}
@@ -570,7 +592,7 @@ func (m *MetricsView) renderContentLines() []string {
 	}
 
 	// ヘルプテキストを更新
-	helpText := "Controls: j/k scroll • r refresh • f filter • o browse PRs • a show all • q back"
+	helpText := "Controls: j/k scroll • r refresh • f filter • o browse PRs • a show all • y copy as markdown • q back"
 	lines = append(lines, styles.HelpStyle.Render(helpText))
 
 	return lines
@@ -1184,7 +1206,10 @@ func (m *MetricsView) updateStatusBar() {
 	m.statusBar.SetMode(mode)
 
 	var status string
-	if m.prBrowseMode {
+	// コピー成功メッセージを優先表示
+	if m.copyMessage != "" {
+		status = m.copyMessage
+	} else if m.prBrowseMode {
 		entries := m.getFilteredPRLeadTimes()
 		status = fmt.Sprintf("Browsing PRs (%d/%d)", m.selectedPRIndex+1, len(entries))
 	} else if m.filterMode {
@@ -1251,6 +1276,9 @@ func (m *MetricsView) updateStatusBar() {
 		m.statusBar.AddItem("f", "filter")
 		if m.filteredRepo != "" {
 			m.statusBar.AddItem("a", "show all")
+		}
+		if m.metrics != nil && !m.loading {
+			m.statusBar.AddItem("y", "copy")
 		}
 		m.statusBar.AddItem("l", "rate limit")
 		m.statusBar.AddItem("q", "back")
@@ -1364,4 +1392,499 @@ func applyChangeColorANSI(text string, value float64) string {
 	default:
 		return gray + text + reset
 	}
+}
+
+// toMarkdown はメトリクス情報をMarkdown形式に変換する
+func (m *MetricsView) toMarkdown() string {
+	if m.metrics == nil {
+		return "# Lead Time Metrics\n\nNo data available.\n"
+	}
+
+	var sb strings.Builder
+
+	// タイトル
+	sb.WriteString("# Lead Time Metrics\n\n")
+
+	// 計測期間
+	if m.config != nil && m.config.CalculationPeriod > 0 {
+		days := int(m.config.CalculationPeriod.Hours() / 24)
+		endDate := time.Now()
+		startDate := endDate.Add(-m.config.CalculationPeriod)
+		sb.WriteString(fmt.Sprintf("**Period**: %s ~ %s (%d days)\n\n",
+			startDate.Format("2006-01-02"),
+			endDate.Format("2006-01-02"),
+			days))
+	}
+
+	// 最終更新日時
+	if !m.lastUpdated.IsZero() {
+		sb.WriteString(fmt.Sprintf("**Last updated**: %s\n\n", m.lastUpdated.Format("2006-01-02 15:04:05")))
+	}
+
+	// フィルタ状態
+	if m.filteredRepo != "" {
+		sb.WriteString(fmt.Sprintf("**Filtered**: %s\n\n", m.filteredRepo))
+	}
+
+	// Overall Lead Time
+	sb.WriteString(m.overallToMarkdown())
+	sb.WriteString("\n")
+
+	// PR Lead Times
+	if m.config.ShowPRLeadTimes {
+		sb.WriteString(m.prLeadTimesToMarkdown())
+		sb.WriteString("\n")
+	}
+
+	// Review Phase Breakdown
+	if m.config.ShowReviewPhases {
+		sb.WriteString(m.reviewPhasesToMarkdown())
+		sb.WriteString("\n")
+	}
+
+	// Day of Week
+	if m.config.ShowDayOfWeek {
+		sb.WriteString(m.dayOfWeekToMarkdown())
+		sb.WriteString("\n")
+	}
+
+	// Weekly Comparison
+	if m.config.ShowWeeklyComparison {
+		sb.WriteString(m.weeklyComparisonToMarkdown())
+		sb.WriteString("\n")
+	}
+
+	// Quality Issues
+	if m.config.ShowQualityIssues {
+		sb.WriteString(m.qualityIssuesToMarkdown())
+		sb.WriteString("\n")
+	}
+
+	// Stagnant PRs
+	if m.config.ShowStagnantPRs {
+		sb.WriteString(m.stagnantPRsToMarkdown())
+		sb.WriteString("\n")
+	}
+
+	// Repository Stats
+	if m.config.ShowRepositoryStats {
+		sb.WriteString(m.repositoryStatsToMarkdown())
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+func (m *MetricsView) overallToMarkdown() string {
+	var sb strings.Builder
+
+	header := "## Overall Lead Time"
+	stat := m.metrics.Overall
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("## Lead Time - %s", m.filteredRepo)
+		if repoStat, ok := m.metrics.ByRepository[m.filteredRepo]; ok {
+			stat = repoStat
+		} else {
+			sb.WriteString(fmt.Sprintf("%s\n\nNo lead time data for %s.\n", header, m.filteredRepo))
+			return sb.String()
+		}
+	}
+
+	sb.WriteString(header + "\n\n")
+
+	if stat.Count == 0 {
+		sb.WriteString("No merged PRs in the selected period.\n")
+		return sb.String()
+	}
+
+	sb.WriteString(fmt.Sprintf("- **Average**: %s\n", formatDuration(stat.Average)))
+	sb.WriteString(fmt.Sprintf("- **Median**: %s\n", formatDuration(stat.Median)))
+	sb.WriteString(fmt.Sprintf("- **PRs**: %d\n", stat.Count))
+
+	return sb.String()
+}
+
+func (m *MetricsView) prLeadTimesToMarkdown() string {
+	entries := m.getFilteredPRLeadTimes()
+
+	var sb strings.Builder
+	sb.WriteString("## PR Lead Times (Open → Merge)\n\n")
+
+	if len(entries) == 0 {
+		sb.WriteString("No PR lead time data available.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("| # | Lead Time | Repository | PR | Title | Merged Date |\n")
+	sb.WriteString("|---|-----------|------------|----|---------|--------------|\n")
+
+	for idx, entry := range entries {
+		leadTimeStr := formatDuration(entry.LeadTime)
+		repoAndNumber := fmt.Sprintf("%s [#%d](%s)", entry.Repository, entry.Number, entry.HTMLURL)
+		title := entry.Title
+		mergedDate := entry.MergedAt.Format("2006-01-02")
+
+		sb.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %s | %s |\n",
+			idx+1,
+			leadTimeStr,
+			entry.Repository,
+			repoAndNumber,
+			title,
+			mergedDate,
+		))
+	}
+
+	return sb.String()
+}
+
+func (m *MetricsView) reviewPhasesToMarkdown() string {
+	var sb strings.Builder
+
+	header := "## Review Phase Breakdown"
+	phaseMetrics := m.metrics.PhaseBreakdown
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("## Review Phase Breakdown (Filtered: %s)", m.filteredRepo)
+		if m.metrics.ByRepositoryPhaseBreakdown != nil {
+			if repoPhase, ok := m.metrics.ByRepositoryPhaseBreakdown[m.filteredRepo]; ok {
+				phaseMetrics = repoPhase
+			} else {
+				sb.WriteString(fmt.Sprintf("%s\n\nNo review phase data available for %s.\n", header, m.filteredRepo))
+				return sb.String()
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf("%s\n\nNo review phase data available for %s.\n", header, m.filteredRepo))
+			return sb.String()
+		}
+	}
+
+	sb.WriteString(header + "\n\n")
+
+	if phaseMetrics.SampleCount == 0 {
+		sb.WriteString("Not enough review phase data.\n")
+		return sb.String()
+	}
+
+	type phaseInfo struct {
+		label    string
+		duration time.Duration
+	}
+
+	phases := []phaseInfo{
+		{label: "PR Created → First Review", duration: phaseMetrics.CreatedToFirstReview},
+		{label: "First Review → Approval", duration: phaseMetrics.FirstReviewToApproval},
+		{label: "Approval → Merge", duration: phaseMetrics.ApprovalToMerge},
+	}
+
+	longest := time.Duration(0)
+	for _, phase := range phases {
+		if phase.duration > longest {
+			longest = phase.duration
+		}
+	}
+
+	for _, phase := range phases {
+		bottleneck := ""
+		if longest > 0 && phase.duration == longest {
+			bottleneck = " ← **ボトルネック**"
+		}
+		sb.WriteString(fmt.Sprintf("- **%s**: %s (avg, %d PRs)%s\n",
+			phase.label,
+			formatDuration(phase.duration),
+			phaseMetrics.SampleCount,
+			bottleneck,
+		))
+	}
+
+	sb.WriteString(fmt.Sprintf("- **Total Lead Time**: %s (avg)\n", formatDuration(phaseMetrics.TotalLeadTime)))
+
+	return sb.String()
+}
+
+func (m *MetricsView) dayOfWeekToMarkdown() string {
+	var sb strings.Builder
+
+	header := "## Activity by Day of Week"
+	statsByDay := m.metrics.ByDayOfWeek
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("## Activity by Day of Week (Filtered: %s)", m.filteredRepo)
+		if m.metrics.ByRepositoryDayOfWeek != nil {
+			statsByDay = m.metrics.ByRepositoryDayOfWeek[m.filteredRepo]
+		} else {
+			statsByDay = nil
+		}
+	}
+
+	sb.WriteString(header + "\n\n")
+
+	if statsByDay == nil || len(statsByDay) == 0 {
+		sb.WriteString("No day-of-week data available.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("|  | Mon | Tue | Wed | Thu | Fri | Sat | Sun |\n")
+	sb.WriteString("|---|-----|-----|-----|-----|-----|-----|-----|\n")
+
+	mergeCounts := make([]string, 0, len(weekdayDisplayOrder))
+	reviewCounts := make([]string, 0, len(weekdayDisplayOrder))
+
+	for _, day := range weekdayDisplayOrder {
+		stats := statsByDay[day]
+		mergeCounts = append(mergeCounts, fmt.Sprintf("%d", stats.MergeCount))
+		reviewCounts = append(reviewCounts, fmt.Sprintf("%d", stats.ReviewCount))
+	}
+
+	sb.WriteString(fmt.Sprintf("| Merges | %s |\n", strings.Join(mergeCounts, " | ")))
+	sb.WriteString(fmt.Sprintf("| Reviews | %s |\n", strings.Join(reviewCounts, " | ")))
+
+	return sb.String()
+}
+
+func (m *MetricsView) weeklyComparisonToMarkdown() string {
+	var sb strings.Builder
+
+	header := "## Weekly Review Activity"
+	comparison := m.metrics.WeeklyComparison
+
+	if m.filteredRepo != "" {
+		header = fmt.Sprintf("## Weekly Review Activity (Filtered: %s)", m.filteredRepo)
+		if repoComparison, ok := m.metrics.ByRepositoryWeekly[m.filteredRepo]; ok {
+			comparison = repoComparison
+		} else {
+			sb.WriteString(fmt.Sprintf("%s\n\nNo weekly data available for %s.\n", header, m.filteredRepo))
+			return sb.String()
+		}
+	}
+
+	sb.WriteString(header + "\n\n")
+	sb.WriteString("| Period | Reviews | Merges |\n")
+	sb.WriteString("|--------|---------|--------|\n")
+	sb.WriteString(fmt.Sprintf("| This Week (last 7 days) | %d | %d |\n",
+		comparison.ThisWeek.ReviewCount,
+		comparison.ThisWeek.MergeCount,
+	))
+	sb.WriteString(fmt.Sprintf("| Last Week (8-14 days ago) | %d | %d |\n",
+		comparison.LastWeek.ReviewCount,
+		comparison.LastWeek.MergeCount,
+	))
+	sb.WriteString(fmt.Sprintf("| Change | %+.1f%% | %+.1f%% |\n",
+		comparison.ReviewChangePercent,
+		comparison.MergeChangePercent,
+	))
+
+	return sb.String()
+}
+
+func (m *MetricsView) qualityIssuesToMarkdown() string {
+	var sb strings.Builder
+
+	issues := m.metrics.QualityIssues.Issues
+	if len(issues) == 0 {
+		sb.WriteString("## PR Quality Issues\n\nNo PR quality issues detected.\n")
+		return sb.String()
+	}
+
+	filtered := issues
+	if m.filteredRepo != "" {
+		filtered = make([]models.PRQualityIssue, 0, len(issues))
+		for _, issue := range issues {
+			if issue.Repository == m.filteredRepo {
+				filtered = append(filtered, issue)
+			}
+		}
+		if len(filtered) == 0 {
+			sb.WriteString(fmt.Sprintf("## PR Quality Issues\n\nNo PR quality issues found for %s.\n", m.filteredRepo))
+			return sb.String()
+		}
+	}
+
+	var high, medium []models.PRQualityIssue
+	for _, issue := range filtered {
+		if strings.EqualFold(issue.Severity, "high") {
+			high = append(high, issue)
+		} else {
+			medium = append(medium, issue)
+		}
+	}
+
+	displayCount := len(filtered)
+	if displayCount > maxQualityIssuesToDisplay {
+		displayCount = maxQualityIssuesToDisplay
+	}
+
+	sb.WriteString(fmt.Sprintf("## PR Quality Issues (%d issues)\n\n", displayCount))
+
+	if len(high) > displayCount {
+		high = high[:displayCount]
+		medium = nil
+	} else {
+		remaining := displayCount - len(high)
+		if remaining < len(medium) {
+			medium = medium[:remaining]
+		}
+	}
+
+	if len(high) > 0 {
+		sb.WriteString("### High Priority\n\n")
+		sb.WriteString("| Repository | PR | Type | Details | Title |\n")
+		sb.WriteString("|------------|----|---------|---------|---------|\n")
+		for _, issue := range high {
+			sb.WriteString(fmt.Sprintf("| %s | #%d | %s | %s | %s |\n",
+				issue.Repository,
+				issue.Number,
+				issue.IssueType,
+				issue.Details,
+				issue.Title,
+			))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(medium) > 0 {
+		sb.WriteString("### Medium Priority\n\n")
+		sb.WriteString("| Repository | PR | Type | Details | Title |\n")
+		sb.WriteString("|------------|----|---------|---------|---------|\n")
+		for _, issue := range medium {
+			sb.WriteString(fmt.Sprintf("| %s | #%d | %s | %s | %s |\n",
+				issue.Repository,
+				issue.Number,
+				issue.IssueType,
+				issue.Details,
+				issue.Title,
+			))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+func (m *MetricsView) stagnantPRsToMarkdown() string {
+	var sb strings.Builder
+
+	stagnant := m.metrics.StagnantPRs
+	sb.WriteString(fmt.Sprintf("## Stagnant PRs (Open > %s)\n\n", formatDuration(stagnant.Threshold)))
+
+	filteredPRs := stagnant.LongestWaiting
+	if m.filteredRepo != "" {
+		filteredPRs = []models.StagnantPRInfo{}
+		for _, pr := range stagnant.LongestWaiting {
+			if pr.Repository == m.filteredRepo {
+				filteredPRs = append(filteredPRs, pr)
+			}
+		}
+	}
+
+	if len(filteredPRs) == 0 {
+		sb.WriteString("No stagnant PRs found.\n")
+		return sb.String()
+	}
+
+	if m.filteredRepo == "" {
+		sb.WriteString(fmt.Sprintf("**Total stagnant PRs**: %d\n\n", stagnant.TotalStagnant))
+	}
+
+	sb.WriteString("| # | Repository | PR | Age | Title |\n")
+	sb.WriteString("|---|------------|----|---------|---------|\n")
+
+	for idx, pr := range filteredPRs {
+		sb.WriteString(fmt.Sprintf("| %d | %s | #%d | %s | %s |\n",
+			idx+1,
+			pr.Repository,
+			pr.Number,
+			formatDuration(pr.Age),
+			pr.Title,
+		))
+	}
+
+	return sb.String()
+}
+
+func (m *MetricsView) repositoryStatsToMarkdown() string {
+	var sb strings.Builder
+	sb.WriteString("## Per Repository\n\n")
+
+	if len(m.metrics.ByRepository) == 0 {
+		sb.WriteString("No repository data available.\n")
+		return sb.String()
+	}
+
+	repoNames := make([]string, 0, len(m.metrics.ByRepository))
+	if m.filteredRepo != "" {
+		if _, exists := m.metrics.ByRepository[m.filteredRepo]; exists {
+			repoNames = append(repoNames, m.filteredRepo)
+		}
+	} else {
+		for name := range m.metrics.ByRepository {
+			repoNames = append(repoNames, name)
+		}
+		sort.Strings(repoNames)
+	}
+
+	if len(repoNames) == 0 {
+		sb.WriteString(fmt.Sprintf("No data available for %s.\n", m.filteredRepo))
+		return sb.String()
+	}
+
+	sb.WriteString("| Repository | Avg | Median | PRs |\n")
+	sb.WriteString("|------------|-----|--------|-----|\n")
+
+	for _, name := range repoNames {
+		stat := m.metrics.ByRepository[name]
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %d |\n",
+			name,
+			formatDuration(stat.Average),
+			formatDuration(stat.Median),
+			stat.Count,
+		))
+	}
+
+	return sb.String()
+}
+
+// copyToClipboard はテキストをクリップボードにコピーする
+func copyToClipboard(text string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "linux":
+		// xclipを試す
+		if _, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		} else if _, err := exec.LookPath("xsel"); err == nil {
+			// xselを試す
+			cmd = exec.Command("xsel", "--clipboard", "--input")
+		} else {
+			return fmt.Errorf("clipboard tool not found: install xclip or xsel")
+		}
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	pipe, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start clipboard command: %w", err)
+	}
+
+	if _, err := pipe.Write([]byte(text)); err != nil {
+		return fmt.Errorf("failed to write to clipboard: %w", err)
+	}
+
+	if err := pipe.Close(); err != nil {
+		return fmt.Errorf("failed to close pipe: %w", err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("clipboard command failed: %w", err)
+	}
+
+	return nil
 }
