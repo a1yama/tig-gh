@@ -64,6 +64,8 @@ metrics:
     - staging
   # ドラフトPRをメトリクスから除外（ドラフト期間はリードタイムから除外）
   exclude_draft_prs: true
+  # 曜日別活動で土日を表示するかどうか（falseで平日のみ表示）
+  show_weekend_in_day_of_week: false
 
 # UI関連の設定
 ui:

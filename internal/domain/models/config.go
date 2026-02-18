@@ -77,6 +77,10 @@ type MetricsConfig struct {
 	// ExcludeDraftPRs はドラフトPRをメトリクスから除外するかどうか
 	// trueの場合、ドラフト期間はリードタイム計算から除外される
 	ExcludeDraftPRs bool `mapstructure:"exclude_draft_prs" yaml:"exclude_draft_prs"`
+
+	// ShowWeekendInDayOfWeek は曜日別活動で土日を表示するかどうか
+	// falseの場合、平日（月〜金）のみ表示
+	ShowWeekendInDayOfWeek bool `mapstructure:"show_weekend_in_day_of_week" yaml:"show_weekend_in_day_of_week"`
 }
 
 // UIConfig はUI関連の設定を表す
@@ -170,18 +174,19 @@ func DefaultConfig() *Config {
 			UseFileCache: true,
 		},
 		Metrics: MetricsConfig{
-			Enabled:              false,
-			LeadTimeEnabled:      false,
-			CalculationPeriod:    30 * 24 * time.Hour,
-			ShowReviewPhases:     true,
-			ShowDayOfWeek:        true,
-			ShowWeeklyComparison: true,
-			ShowQualityIssues:    true,
-			ShowStagnantPRs:      true,
-			ShowRepositoryStats:  true,
-			ShowPRLeadTimes:      true,
-			ExcludeBaseBranches:  []string{},
-			ExcludeDraftPRs:      true,
+			Enabled:                false,
+			LeadTimeEnabled:        false,
+			CalculationPeriod:      30 * 24 * time.Hour,
+			ShowReviewPhases:       true,
+			ShowDayOfWeek:          true,
+			ShowWeeklyComparison:   true,
+			ShowQualityIssues:      true,
+			ShowStagnantPRs:        true,
+			ShowRepositoryStats:    true,
+			ShowPRLeadTimes:        true,
+			ExcludeBaseBranches:    []string{},
+			ExcludeDraftPRs:        true,
+			ShowWeekendInDayOfWeek: false,
 		},
 	}
 }

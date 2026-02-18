@@ -178,6 +178,7 @@ tig-gh --version
 
 3. **Day-of-Week Activity（曜日別活動）**
    - 曜日ごとのレビュー数・マージ数
+   - デフォルトで平日（月〜金）のみ表示
    - 曜日パターンを把握し、負荷が集中する曜日を把握
 
 4. **Weekly Comparison（週次比較）**
@@ -226,6 +227,7 @@ metrics:
     - develop
     - staging
   exclude_draft_prs: true        # ドラフトPRを除外（ドラフト期間はリードタイムから除外）
+  show_weekend_in_day_of_week: false  # 曜日別活動で土日を表示（falseで平日のみ）
 ```
 
 #### パフォーマンスとプログレス表示

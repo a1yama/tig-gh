@@ -881,8 +881,11 @@ func (m *MetricsView) renderDayOfWeekSection() []string {
 		return lines
 	}
 
-	headers := make([]string, len(weekdayDisplayOrder))
-	for i, day := range weekdayDisplayOrder {
+	// 表示する曜日を決定（土日を除外する場合は平日のみ）
+	displayDays := m.getDisplayDays()
+
+	headers := make([]string, len(displayDays))
+	for i, day := range displayDays {
 		headers[i] = fmt.Sprintf("%4s", shortWeekday(day))
 	}
 	lines = append(lines, fmt.Sprintf("%-8s%s", "", strings.Join(headers, " ")))
@@ -890,7 +893,7 @@ func (m *MetricsView) renderDayOfWeekSection() []string {
 	mergeRow := "Merges  "
 	reviewRow := "Reviews "
 
-	for _, day := range weekdayDisplayOrder {
+	for _, day := range displayDays {
 		stats := statsByDay[day]
 		mergeRow += fmt.Sprintf("%4d", stats.MergeCount)
 		reviewRow += fmt.Sprintf("%4d", stats.ReviewCount)
@@ -1345,6 +1348,22 @@ var weekdayDisplayOrder = []time.Weekday{
 	time.Sunday,
 }
 
+var weekdaysOnly = []time.Weekday{
+	time.Monday,
+	time.Tuesday,
+	time.Wednesday,
+	time.Thursday,
+	time.Friday,
+}
+
+// getDisplayDays は表示する曜日のリストを返す（設定により土日を除外）
+func (m *MetricsView) getDisplayDays() []time.Weekday {
+	if m.config != nil && !m.config.ShowWeekendInDayOfWeek {
+		return weekdaysOnly
+	}
+	return weekdayDisplayOrder
+}
+
 func shortWeekday(day time.Weekday) string {
 	name := day.String()
 	if len(name) <= 3 {
@@ -1624,13 +1643,23 @@ func (m *MetricsView) dayOfWeekToMarkdown() string {
 		return sb.String()
 	}
 
-	sb.WriteString("|  | Mon | Tue | Wed | Thu | Fri | Sat | Sun |\n")
-	sb.WriteString("|---|-----|-----|-----|-----|-----|-----|-----|\n")
+	// 表示する曜日を決定
+	displayDays := m.getDisplayDays()
 
-	mergeCounts := make([]string, 0, len(weekdayDisplayOrder))
-	reviewCounts := make([]string, 0, len(weekdayDisplayOrder))
+	// ヘッダー行を作成
+	headerRow := "|  |"
+	separatorRow := "|---|"
+	for _, day := range displayDays {
+		headerRow += fmt.Sprintf(" %s |", shortWeekday(day))
+		separatorRow += "-----|"
+	}
+	sb.WriteString(headerRow + "\n")
+	sb.WriteString(separatorRow + "\n")
 
-	for _, day := range weekdayDisplayOrder {
+	mergeCounts := make([]string, 0, len(displayDays))
+	reviewCounts := make([]string, 0, len(displayDays))
+
+	for _, day := range displayDays {
 		stats := statsByDay[day]
 		mergeCounts = append(mergeCounts, fmt.Sprintf("%d", stats.MergeCount))
 		reviewCounts = append(reviewCounts, fmt.Sprintf("%d", stats.ReviewCount))
