@@ -148,7 +148,7 @@ func main() {
 	basePRRepo := github.NewPullRequestRepository(githubClient)
 	commitRepo := github.NewCommitRepository(githubClient)
 	searchRepo := github.NewSearchRepository(githubClient)
-	metricsRepo := github.NewMetricsRepository(githubClient, cfg.Metrics.ExcludeBaseBranches)
+	metricsRepo := github.NewMetricsRepository(githubClient, cfg.Metrics.ExcludeBaseBranches, cfg.Metrics.ExcludeDraftPRs)
 
 	// キャッシュでラップ
 	var issueRepo repository.IssueRepository

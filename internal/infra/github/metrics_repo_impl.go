@@ -22,19 +22,22 @@ const (
 )
 
 type leadTimeSample struct {
-	duration      time.Duration
-	mergedAt      time.Time
-	firstReviewAt *time.Time
-	approvedAt    *time.Time
-	number        int
-	title         string
-	htmlURL       string
+	duration         time.Duration
+	mergedAt         time.Time
+	createdAt        time.Time
+	firstReviewAt    *time.Time
+	approvedAt       *time.Time
+	readyForReviewAt *time.Time // ドラフト解除時刻（nilの場合はドラフトではなかった）
+	number           int
+	title            string
+	htmlURL          string
 }
 
 // MetricsRepositoryImpl は MetricsRepository を実装する
 type MetricsRepositoryImpl struct {
-	client             *Client
+	client              *Client
 	excludeBaseBranches map[string]struct{}
+	excludeDraftPRs     bool
 }
 
 type repoFetchTask struct {
@@ -56,14 +59,15 @@ type stagnantFetchResult struct {
 }
 
 // NewMetricsRepository は MetricsRepository 実装を生成する
-func NewMetricsRepository(client *Client, excludeBranches []string) repository.MetricsRepository {
+func NewMetricsRepository(client *Client, excludeBranches []string, excludeDrafts bool) repository.MetricsRepository {
 	exclude := make(map[string]struct{}, len(excludeBranches))
 	for _, b := range excludeBranches {
 		exclude[b] = struct{}{}
 	}
 	return &MetricsRepositoryImpl{
-		client:             client,
+		client:              client,
 		excludeBaseBranches: exclude,
+		excludeDraftPRs:     excludeDrafts,
 	}
 }
 
@@ -327,12 +331,44 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 				continue
 			}
 
+			// ドラフトPRの処理
+			var readyForReviewAt *time.Time
+			var effectiveStartTime time.Time
+
+			if pr.GetDraft() {
+				// PRがドラフトとしてマージされた場合、ドラフト解除時刻を取得
+				readyTime, err := r.fetchReadyForReviewTime(ctx, owner, repo, pr.GetNumber())
+				if err != nil {
+					// エラーの場合は警告を出すが処理は続行
+					fmt.Printf("failed to fetch ready_for_review time for %s/%s#%d: %v\n", owner, repo, pr.GetNumber(), err)
+				}
+				readyForReviewAt = readyTime
+
+				// ドラフトPR除外が有効で、ドラフト解除時刻が取得できた場合はそれを使用
+				if r.excludeDraftPRs && readyForReviewAt != nil {
+					effectiveStartTime = *readyForReviewAt
+				} else {
+					effectiveStartTime = createdAt
+				}
+			} else {
+				effectiveStartTime = createdAt
+			}
+
+			// リードタイムを計算
+			duration := mergedAt.Sub(effectiveStartTime)
+			if duration < 0 {
+				// 時刻が逆転している場合はスキップ
+				continue
+			}
+
 			samples = append(samples, leadTimeSample{
-				duration: mergedAt.Sub(createdAt),
-				mergedAt: mergedAt,
-				number:   pr.GetNumber(),
-				title:    pr.GetTitle(),
-				htmlURL:  pr.GetHTMLURL(),
+				duration:         duration,
+				mergedAt:         mergedAt,
+				createdAt:        createdAt,
+				readyForReviewAt: readyForReviewAt,
+				number:           pr.GetNumber(),
+				title:            pr.GetTitle(),
+				htmlURL:          pr.GetHTMLURL(),
 			})
 			lastIdx := len(samples) - 1
 			reviewRequests = append(reviewRequests, reviewRequest{
@@ -511,16 +547,21 @@ func calculatePhaseBreakdown(samples []leadTimeSample) models.ReviewPhaseMetrics
 			continue
 		}
 
-		createdAt := sample.mergedAt.Add(-sample.duration)
+		// ドラフト解除時刻があればそれを使用、なければ作成時刻
+		startTime := sample.createdAt
+		if sample.readyForReviewAt != nil {
+			startTime = *sample.readyForReviewAt
+		}
+
 		firstReviewAt := *sample.firstReviewAt
 		approvedAt := *sample.approvedAt
 
 		// 期待される順序でタイムスタンプが揃っていない場合は除外
-		if firstReviewAt.Before(createdAt) || approvedAt.Before(firstReviewAt) || sample.mergedAt.Before(approvedAt) {
+		if firstReviewAt.Before(startTime) || approvedAt.Before(firstReviewAt) || sample.mergedAt.Before(approvedAt) {
 			continue
 		}
 
-		totalCreatedToFirst += firstReviewAt.Sub(createdAt)
+		totalCreatedToFirst += firstReviewAt.Sub(startTime)
 		totalFirstToApproval += approvedAt.Sub(firstReviewAt)
 		totalApprovalToMerge += sample.mergedAt.Sub(approvedAt)
 		totalLeadTime += sample.duration
@@ -739,6 +780,12 @@ func (r *MetricsRepositoryImpl) fetchPRQualityIssuesForRepo(ctx context.Context,
 					continue
 				}
 			}
+
+			// ドラフトPRを除外
+			if r.excludeDraftPRs && pr.GetDraft() {
+				continue
+			}
+
 			issues = append(issues, collectQualityIssuesForPR(slug, pr)...)
 		}
 
@@ -931,6 +978,11 @@ func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repo
 						}
 					}
 
+					// ドラフトPRを除外
+					if r.excludeDraftPRs && pr.GetDraft() {
+						continue
+					}
+
 					age := now.Sub(pr.CreatedAt.Time)
 					if age >= stagnantPRThreshold {
 						stagnant = append(stagnant, models.StagnantPRInfo{
@@ -1090,4 +1142,36 @@ func (r *MetricsRepositoryImpl) getDefaultBranch(ctx context.Context, owner, rep
 	}
 
 	return branch, nil
+}
+
+// fetchReadyForReviewTime はドラフトPRが ready_for_review になった時刻を取得する
+func (r *MetricsRepositoryImpl) fetchReadyForReviewTime(ctx context.Context, owner, repo string, number int) (*time.Time, error) {
+	opts := &github.ListOptions{PerPage: 100}
+
+	for {
+		events, resp, err := r.client.client.Issues.ListIssueTimeline(ctx, owner, repo, number, opts)
+		if err != nil {
+			return nil, handleGitHubError(err, resp)
+		}
+
+		for _, event := range events {
+			if event == nil {
+				continue
+			}
+
+			// ready_for_review イベントを探す
+			if event.GetEvent() == "ready_for_review" && event.CreatedAt != nil {
+				readyTime := event.CreatedAt.Time
+				return &readyTime, nil
+			}
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	// ready_for_review イベントが見つからなかった場合はnilを返す
+	return nil, nil
 }

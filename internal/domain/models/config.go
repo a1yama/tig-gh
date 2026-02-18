@@ -73,6 +73,10 @@ type MetricsConfig struct {
 	// ExcludeBaseBranches は除外するベースブランチ名のリスト
 	// ここに指定されたブランチがデフォルトブランチであるリポジトリのPRは計測対象外になる
 	ExcludeBaseBranches []string `mapstructure:"exclude_base_branches" yaml:"exclude_base_branches"`
+
+	// ExcludeDraftPRs はドラフトPRをメトリクスから除外するかどうか
+	// trueの場合、ドラフト期間はリードタイム計算から除外される
+	ExcludeDraftPRs bool `mapstructure:"exclude_draft_prs" yaml:"exclude_draft_prs"`
 }
 
 // UIConfig はUI関連の設定を表す
@@ -176,7 +180,8 @@ func DefaultConfig() *Config {
 			ShowStagnantPRs:      true,
 			ShowRepositoryStats:  true,
 			ShowPRLeadTimes:      true,
-			ExcludeBaseBranches: []string{},
+			ExcludeBaseBranches:  []string{},
+			ExcludeDraftPRs:      true,
 		},
 	}
 }

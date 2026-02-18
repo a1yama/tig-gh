@@ -225,6 +225,7 @@ metrics:
   exclude_base_branches:         # 除外するベースブランチ
     - develop
     - staging
+  exclude_draft_prs: true        # ドラフトPRを除外（ドラフト期間はリードタイムから除外）
 ```
 
 #### パフォーマンスとプログレス表示
@@ -250,9 +251,10 @@ metrics:
 - リードタイムが長いPRのパターンを分析し、改善策を検討
 - `o`キーでブラウズモード → `Enter`で該当PRの詳細を確認
 
-**除外ブランチでメトリクスを正確化:**
+**除外ブランチとドラフトPRでメトリクスを正確化:**
 - `exclude_base_branches`でdevelop/stagingなど本番以外のブランチを除外
-- 本番リリースフローのみを正確に計測
+- `exclude_draft_prs: true`でドラフト期間をリードタイムから除外
+- 本番リリースフローのみを正確に計測し、実際のレビュー時間を測定
 
 **レビューフェーズ分解でボトルネック特定:**
 - Review Phase Breakdownで各フェーズの滞留時間を確認

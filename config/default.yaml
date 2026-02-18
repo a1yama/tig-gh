@@ -42,6 +42,8 @@ metrics:
   calculation_period: 720h
 
   # 各セクションの表示/非表示設定
+  # PRリードタイム一覧の表示
+  show_pr_lead_times: true
   # レビューフェーズ分解の表示
   show_review_phases: true
   # 曜日ごとの統計の表示
@@ -54,6 +56,14 @@ metrics:
   show_stagnant_prs: true
   # リポジトリごとの統計の表示
   show_repository_stats: true
+
+  # 除外設定
+  # 除外するベースブランチ（デフォルトブランチがこれに該当するリポジトリのPRは計測対象外）
+  exclude_base_branches:
+    - develop
+    - staging
+  # ドラフトPRをメトリクスから除外（ドラフト期間はリードタイムから除外）
+  exclude_draft_prs: true
 
 # UI関連の設定
 ui:
