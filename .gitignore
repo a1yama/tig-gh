@@ -51,5 +51,8 @@ tmp/
 *.tar.gz
 *.zip
 
+# Generated HTML reports
+metrics.html
+
 # Binary executable (root directory only)
 /tig-gh
