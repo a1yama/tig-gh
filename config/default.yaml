@@ -66,6 +66,13 @@ metrics:
   exclude_draft_prs: true
   # 曜日別活動で土日を表示するかどうか（falseで平日のみ表示）
   show_weekend_in_day_of_week: false
+  # 除外するPR作成者（bot等）
+  exclude_authors:
+    - "renovate[bot]"
+    - "dependabot[bot]"
+  # 除外するラベル名
+  exclude_labels:
+    - "dependencies"
 
 # UI関連の設定
 ui:

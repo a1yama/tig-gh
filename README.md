@@ -85,6 +85,12 @@ metrics:
   exclude_base_branches:
     - develop
     - staging
+  # Bot PRを除外（メトリクス計算とPR一覧の両方に適用）
+  exclude_authors:
+    - "renovate[bot]"
+    - "dependabot[bot]"
+  exclude_labels:
+    - "dependencies"
 
 ui:
   theme: dark  # dark / light / auto
@@ -234,6 +240,11 @@ metrics:
     - staging
   exclude_draft_prs: true        # ドラフトPRを除外（ドラフト期間はリードタイムから除外）
   show_weekend_in_day_of_week: false  # 曜日別活動で土日を表示（falseで平日のみ）
+  exclude_authors:              # 除外するPR作成者（bot等）
+    - "renovate[bot]"
+    - "dependabot[bot]"
+  exclude_labels:               # 除外するラベル名
+    - "dependencies"
 ```
 
 #### HTML出力
@@ -274,9 +285,11 @@ MetricsConfigの表示設定（`show_pr_lead_times`, `show_review_phases`等）�
 - リードタイムが長いPRのパターンを分析し、改善策を検討
 - `o`キーでブラウズモード → `Enter`で該当PRの詳細を確認
 
-**除外ブランチとドラフトPRでメトリクスを正確化:**
+**除外設定でメトリクスを正確化:**
 - `exclude_base_branches`でdevelop/stagingなど本番以外のブランチを除外
 - `exclude_draft_prs: true`でドラフト期間をリードタイムから除外
+- `exclude_authors`でrenovate[bot]やdependabot[bot]などのBot PRを除外
+- `exclude_labels`で"dependencies"などの自動生成PRをラベルで除外
 - 本番リリースフローのみを正確に計測し、実際のレビュー時間を測定
 
 **レビューフェーズ分解でボトルネック特定:**

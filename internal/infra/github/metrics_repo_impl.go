@@ -38,6 +38,8 @@ type MetricsRepositoryImpl struct {
 	client              *Client
 	excludeBaseBranches map[string]struct{}
 	excludeDraftPRs     bool
+	excludeAuthors      map[string]struct{}
+	excludeLabels       map[string]struct{}
 }
 
 type repoFetchTask struct {
@@ -59,15 +61,25 @@ type stagnantFetchResult struct {
 }
 
 // NewMetricsRepository は MetricsRepository 実装を生成する
-func NewMetricsRepository(client *Client, excludeBranches []string, excludeDrafts bool) repository.MetricsRepository {
+func NewMetricsRepository(client *Client, excludeBranches []string, excludeDrafts bool, excludeAuthors []string, excludeLabels []string) repository.MetricsRepository {
 	exclude := make(map[string]struct{}, len(excludeBranches))
 	for _, b := range excludeBranches {
 		exclude[b] = struct{}{}
+	}
+	authors := make(map[string]struct{}, len(excludeAuthors))
+	for _, a := range excludeAuthors {
+		authors[a] = struct{}{}
+	}
+	labels := make(map[string]struct{}, len(excludeLabels))
+	for _, l := range excludeLabels {
+		labels[l] = struct{}{}
 	}
 	return &MetricsRepositoryImpl{
 		client:              client,
 		excludeBaseBranches: exclude,
 		excludeDraftPRs:     excludeDrafts,
+		excludeAuthors:      authors,
+		excludeLabels:       labels,
 	}
 }
 
@@ -317,6 +329,15 @@ func (r *MetricsRepositoryImpl) fetchLeadTimeSamples(ctx context.Context, owner,
 				continue
 			}
 			if _, excluded := r.excludeBaseBranches[base.GetRef()]; excluded {
+				continue
+			}
+
+			// Author除外チェック
+			if _, excluded := r.excludeAuthors[pr.GetUser().GetLogin()]; excluded {
+				continue
+			}
+			// Label除外チェック
+			if r.hasExcludedLabel(pr.Labels) {
 				continue
 			}
 
@@ -786,6 +807,15 @@ func (r *MetricsRepositoryImpl) fetchPRQualityIssuesForRepo(ctx context.Context,
 				continue
 			}
 
+			// Author除外チェック
+			if _, excluded := r.excludeAuthors[pr.GetUser().GetLogin()]; excluded {
+				continue
+			}
+			// Label除外チェック
+			if r.hasExcludedLabel(pr.Labels) {
+				continue
+			}
+
 			issues = append(issues, collectQualityIssuesForPR(slug, pr)...)
 		}
 
@@ -983,6 +1013,15 @@ func (r *MetricsRepositoryImpl) fetchStagnantPRMetrics(ctx context.Context, repo
 						continue
 					}
 
+					// Author除外チェック
+					if _, excluded := r.excludeAuthors[pr.GetUser().GetLogin()]; excluded {
+						continue
+					}
+					// Label除外チェック
+					if r.hasExcludedLabel(pr.Labels) {
+						continue
+					}
+
 					age := now.Sub(pr.CreatedAt.Time)
 					if age >= stagnantPRThreshold {
 						stagnant = append(stagnant, models.StagnantPRInfo{
@@ -1142,6 +1181,22 @@ func (r *MetricsRepositoryImpl) getDefaultBranch(ctx context.Context, owner, rep
 	}
 
 	return branch, nil
+}
+
+// hasExcludedLabel はPRのラベルに除外対象が含まれるかチェックする
+func (r *MetricsRepositoryImpl) hasExcludedLabel(labels []*github.Label) bool {
+	if len(r.excludeLabels) == 0 {
+		return false
+	}
+	for _, label := range labels {
+		if label == nil {
+			continue
+		}
+		if _, excluded := r.excludeLabels[label.GetName()]; excluded {
+			return true
+		}
+	}
+	return false
 }
 
 // fetchReadyForReviewTime はドラフトPRが ready_for_review になった時刻を取得する

@@ -159,7 +159,7 @@ func main() {
 	basePRRepo := github.NewPullRequestRepository(githubClient)
 	commitRepo := github.NewCommitRepository(githubClient)
 	searchRepo := github.NewSearchRepository(githubClient)
-	metricsRepo := github.NewMetricsRepository(githubClient, cfg.Metrics.ExcludeBaseBranches, cfg.Metrics.ExcludeDraftPRs)
+	metricsRepo := github.NewMetricsRepository(githubClient, cfg.Metrics.ExcludeBaseBranches, cfg.Metrics.ExcludeDraftPRs, cfg.Metrics.ExcludeAuthors, cfg.Metrics.ExcludeLabels)
 
 	// キャッシュでラップ
 	var issueRepo repository.IssueRepository
@@ -176,7 +176,7 @@ func main() {
 
 	// UseCaseの初期化
 	fetchIssuesUseCase := usecase.NewFetchIssuesUseCase(issueRepo)
-	fetchPRsUseCase := usecase.NewFetchPRsUseCase(prRepo)
+	fetchPRsUseCase := usecase.NewFetchPRsUseCase(prRepo, cfg.Metrics.ExcludeAuthors, cfg.Metrics.ExcludeLabels)
 	fetchCommitsUseCase := usecase.NewFetchCommitsUseCase(commitRepo)
 	searchUseCase := usecase.NewSearchUseCase(searchRepo)
 	fetchMetricsUseCase := usecase.NewFetchLeadTimeMetricsUseCase(metricsRepo, cfg)

@@ -81,6 +81,12 @@ type MetricsConfig struct {
 	// ShowWeekendInDayOfWeek は曜日別活動で土日を表示するかどうか
 	// falseの場合、平日（月〜金）のみ表示
 	ShowWeekendInDayOfWeek bool `mapstructure:"show_weekend_in_day_of_week" yaml:"show_weekend_in_day_of_week"`
+
+	// ExcludeAuthors は除外するPR作成者のリスト（bot等）
+	ExcludeAuthors []string `mapstructure:"exclude_authors" yaml:"exclude_authors"`
+
+	// ExcludeLabels は除外するラベル名のリスト
+	ExcludeLabels []string `mapstructure:"exclude_labels" yaml:"exclude_labels"`
 }
 
 // UIConfig はUI関連の設定を表す
@@ -187,6 +193,8 @@ func DefaultConfig() *Config {
 			ExcludeBaseBranches:    []string{},
 			ExcludeDraftPRs:        true,
 			ShowWeekendInDayOfWeek: false,
+			ExcludeAuthors:         []string{},
+			ExcludeLabels:          []string{},
 		},
 	}
 }

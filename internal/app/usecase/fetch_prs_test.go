@@ -167,7 +167,7 @@ func TestFetchPRsUseCase_Execute(t *testing.T) {
 			mockRepo := mock.NewMockPullRequestRepository(ctrl)
 			tt.mockSetup(mockRepo)
 
-			uc := usecase.NewFetchPRsUseCase(mockRepo)
+			uc := usecase.NewFetchPRsUseCase(mockRepo, nil, nil)
 			got, err := uc.Execute(context.Background(), tt.owner, tt.repo, tt.opts)
 
 			if (err != nil) != tt.wantErr {
@@ -204,7 +204,7 @@ func TestFetchPRsUseCase_Execute_Context(t *testing.T) {
 		List(gomock.Any(), "test-owner", "test-repo", gomock.Any()).
 		Return(nil, context.Canceled)
 
-	uc := usecase.NewFetchPRsUseCase(mockRepo)
+	uc := usecase.NewFetchPRsUseCase(mockRepo, nil, nil)
 	_, err := uc.Execute(ctx, "test-owner", "test-repo", nil)
 
 	if err == nil {
