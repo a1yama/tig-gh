@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/a1yama/tig-gh/internal/app/export"
 	"github.com/a1yama/tig-gh/internal/app/usecase"
+	"github.com/a1yama/tig-gh/internal/domain/models"
 	"github.com/a1yama/tig-gh/internal/domain/repository"
 	"github.com/a1yama/tig-gh/internal/infra/cache"
 	"github.com/a1yama/tig-gh/internal/infra/config"
@@ -25,13 +27,22 @@ func main() {
 		os.Exit(0)
 	}
 
-	// --metrics フラグの検出
+	// フラグの検出
 	metricsOnly := false
+	metricsHTMLPath := ""
+	metricsHTMLMode := false
 	var filteredArgs []string
 	for _, arg := range os.Args[1:] {
-		if arg == "--metrics" {
+		switch {
+		case arg == "--metrics":
 			metricsOnly = true
-		} else {
+		case arg == "--metrics-html":
+			metricsHTMLMode = true
+			metricsHTMLPath = "metrics.html"
+		case strings.HasPrefix(arg, "--metrics-html="):
+			metricsHTMLMode = true
+			metricsHTMLPath = strings.TrimPrefix(arg, "--metrics-html=")
+		default:
 			filteredArgs = append(filteredArgs, arg)
 		}
 	}
@@ -170,6 +181,11 @@ func main() {
 	searchUseCase := usecase.NewSearchUseCase(searchRepo)
 	fetchMetricsUseCase := usecase.NewFetchLeadTimeMetricsUseCase(metricsRepo, cfg)
 
+	if metricsHTMLMode {
+		runMetricsHTMLExport(fetchMetricsUseCase, &cfg.Metrics, metricsHTMLPath)
+		return
+	}
+
 	// TUIアプリケーションの初期化
 	app := ui.NewAppWithUseCases(
 		fetchIssuesUseCase,
@@ -194,14 +210,37 @@ func main() {
 	// アプリケーション起動メッセージ
 	fmt.Fprintf(os.Stderr, "Starting tig-gh for %s/%s...\n", owner, repo)
 
-	// 実行
-	ctx := context.Background()
-	_ = ctx // 将来的にコンテキストを使う
-
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runMetricsHTMLExport(uc *usecase.FetchLeadTimeMetricsUseCase, metricsCfg *models.MetricsConfig, outputPath string) {
+	ctx := context.Background()
+
+	progressFn := func(p models.MetricsProgress) {
+		fmt.Fprintf(os.Stderr, "Fetching metrics: %s (%d/%d)\n", p.CurrentRepo, p.ProcessedRepos, p.TotalRepos)
+	}
+
+	metrics, err := uc.Execute(ctx, progressFn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to fetch metrics: %v\n", err)
+		os.Exit(1)
+	}
+
+	html, err := export.GenerateHTML(metrics, metricsCfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to generate HTML: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := os.WriteFile(outputPath, []byte(html), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to write file %s: %v\n", outputPath, err)
+		os.Exit(1)
+	}
+
+	fmt.Fprintf(os.Stderr, "Metrics HTML written to %s\n", outputPath)
 }
 
 func expandPath(path string) string {

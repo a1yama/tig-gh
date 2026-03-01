@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Time Metrics</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #24292f; background: #f6f8fa; padding: 2rem; }
+.container { max-width: 960px; margin: 0 auto; }
+h1 { font-size: 1.75rem; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid #d0d7de; }
+h2 { font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1rem; color: #1f2328; }
+h3 { font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #656d76; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+th, td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid #d0d7de; }
+th { background: #f6f8fa; font-weight: 600; }
+tr:nth-child(even) { background: #f6f8fa; }
+tr:nth-child(odd) { background: #ffffff; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+.stat-card { background: #ffffff; border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem; }
+.stat-label { font-size: 0.75rem; color: #656d76; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-value { font-size: 1.5rem; font-weight: 600; color: #1f2328; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.bottleneck { color: #cf222e; font-weight: 600; }
+.badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 2rem; font-size: 0.75rem; font-weight: 600; }
+.badge-high { background: #ffebe9; color: #cf222e; }
+.badge-medium { background: #fff8c5; color: #9a6700; }
+.change-positive { color: #1a7f37; }
+.change-negative { color: #cf222e; }
+.section { margin-bottom: 2rem; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Lead Time Metrics</h1>
+
+<div class="section">
+<h2>Overall Lead Time</h2>
+<div class="stat-grid">
+<div class="stat-card">
+<div class="stat-label">Average</div>
+<div class="stat-value">{{.Overall.Average}}</div>
+</div>
+<div class="stat-card">
+<div class="stat-label">Median</div>
+<div class="stat-value">{{.Overall.Median}}</div>
+</div>
+<div class="stat-card">
+<div class="stat-label">PRs</div>
+<div class="stat-value">{{.Overall.Count}}</div>
+</div>
+</div>
+</div>
+
+{{if .PRLeadTimes}}{{if .PRLeadTimes.Entries}}
+<div class="section">
+<h2>PR Lead Times (Open → Merge)</h2>
+<table>
+<thead>
+<tr><th>#</th><th>Lead Time</th><th>Repository</th><th>PR</th><th>Title</th><th>Merged Date</th></tr>
+</thead>
+<tbody>
+{{range .PRLeadTimes.Entries}}
+<tr>
+<td>{{.Index}}</td>
+<td>{{.LeadTime}}</td>
+<td>{{.Repository}}</td>
+<td><a href="{{.HTMLURL}}">#{{.Number}}</a></td>
+<td>{{.Title}}</td>
+<td>{{.MergedAt}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}{{end}}
+
+{{if .ReviewPhases}}
+<div class="section">
+<h2>Review Phase Breakdown</h2>
+<table>
+<thead>
+<tr><th>Phase</th><th>Duration (avg)</th><th>PRs</th><th></th></tr>
+</thead>
+<tbody>
+{{range .ReviewPhases.Phases}}
+<tr>
+<td>{{.Label}}</td>
+<td>{{.Duration}}</td>
+<td>{{.SampleCount}}</td>
+<td>{{if .IsBottleneck}}<span class="bottleneck">← Bottleneck</span>{{end}}</td>
+</tr>
+{{end}}
+<tr>
+<td><strong>Total Lead Time</strong></td>
+<td><strong>{{.ReviewPhases.TotalLabel}}</strong></td>
+<td>{{.ReviewPhases.SampleCount}}</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+{{end}}
+
+{{if .DayOfWeek}}{{if .DayOfWeek.Days}}
+<div class="section">
+<h2>Activity by Day of Week</h2>
+<table>
+<thead>
+<tr><th></th>{{range .DayOfWeek.Days}}<th>{{.Day}}</th>{{end}}</tr>
+</thead>
+<tbody>
+<tr><td>Merges</td>{{range .DayOfWeek.Days}}<td>{{.MergeCount}}</td>{{end}}</tr>
+<tr><td>Reviews</td>{{range .DayOfWeek.Days}}<td>{{.ReviewCount}}</td>{{end}}</tr>
+</tbody>
+</table>
+</div>
+{{end}}{{end}}
+
+{{if .WeeklyComparison}}
+<div class="section">
+<h2>Weekly Review Activity</h2>
+<table>
+<thead>
+<tr><th>Period</th><th>Reviews</th><th>Merges</th></tr>
+</thead>
+<tbody>
+<tr><td>This Week</td><td>{{.WeeklyComparison.ThisWeekReviews}}</td><td>{{.WeeklyComparison.ThisWeekMerges}}</td></tr>
+<tr><td>Last Week</td><td>{{.WeeklyComparison.LastWeekReviews}}</td><td>{{.WeeklyComparison.LastWeekMerges}}</td></tr>
+<tr><td>Change</td><td>{{.WeeklyComparison.ReviewChange}}</td><td>{{.WeeklyComparison.MergeChange}}</td></tr>
+</tbody>
+</table>
+</div>
+{{end}}
+
+{{if .QualityIssues}}
+{{if or .QualityIssues.HighPriority .QualityIssues.MediumPriority}}
+<div class="section">
+<h2>PR Quality Issues</h2>
+{{if .QualityIssues.HighPriority}}
+<h3>High Priority</h3>
+<table>
+<thead>
+<tr><th>Repository</th><th>PR</th><th>Type</th><th>Details</th><th>Title</th></tr>
+</thead>
+<tbody>
+{{range .QualityIssues.HighPriority}}
+<tr>
+<td>{{.Repository}}</td>
+<td>#{{.Number}}</td>
+<td>{{.IssueType}}</td>
+<td>{{.Details}}</td>
+<td>{{.Title}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{end}}
+{{if .QualityIssues.MediumPriority}}
+<h3>Medium Priority</h3>
+<table>
+<thead>
+<tr><th>Repository</th><th>PR</th><th>Type</th><th>Details</th><th>Title</th></tr>
+</thead>
+<tbody>
+{{range .QualityIssues.MediumPriority}}
+<tr>
+<td>{{.Repository}}</td>
+<td>#{{.Number}}</td>
+<td>{{.IssueType}}</td>
+<td>{{.Details}}</td>
+<td>{{.Title}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{if .StagnantPRs}}{{if .StagnantPRs.Entries}}
+<div class="section">
+<h2>Stagnant PRs (Open &gt; {{.StagnantPRs.Threshold}})</h2>
+<p><strong>Total stagnant PRs</strong>: {{.StagnantPRs.TotalStagnant}}</p>
+<table>
+<thead>
+<tr><th>#</th><th>Repository</th><th>PR</th><th>Age</th><th>Title</th></tr>
+</thead>
+<tbody>
+{{range .StagnantPRs.Entries}}
+<tr>
+<td>{{.Index}}</td>
+<td>{{.Repository}}</td>
+<td>#{{.Number}}</td>
+<td>{{.Age}}</td>
+<td>{{.Title}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}{{end}}
+
+{{if .RepositoryStats}}{{if .RepositoryStats.Repos}}
+<div class="section">
+<h2>Per Repository</h2>
+<table>
+<thead>
+<tr><th>Repository</th><th>Avg</th><th>Median</th><th>PRs</th></tr>
+</thead>
+<tbody>
+{{range .RepositoryStats.Repos}}
+<tr>
+<td>{{.Name}}</td>
+<td>{{.Average}}</td>
+<td>{{.Median}}</td>
+<td>{{.Count}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}{{end}}
+
+</div>
+</body>
+</html>
