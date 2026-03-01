@@ -18,6 +18,7 @@ tig-ghは、tigのような直感的なインターフェースでGitHubを管�
   - リポジトリ別の詳細メトリクス
   - プログレス表示でデータ取得状況をリアルタイム確認
   - GitHub APIレート制限をステータスバーで表示
+  - **HTML出力**: メトリクスをHTMLファイルとして出力し、ブラウザで閲覧可能
 - GitHub API 呼び出し結果をメモリ＋ファイルキャッシュし、再取得を高速化
 - テーマや主要キーバインドを設定ファイルで調整可能
 
@@ -115,6 +116,11 @@ tig-gh owner/repo
 # メトリクスビューのみで起動（他のビューへの切り替えなし、qで終了）
 tig-gh --metrics
 tig-gh owner/repo --metrics
+
+# メトリクスをHTMLファイルとして出力（デフォルト: metrics.html）
+tig-gh --metrics-html
+tig-gh --metrics-html=report.html
+tig-gh owner/repo --metrics-html
 
 # バージョンを表示
 tig-gh --version
@@ -230,6 +236,20 @@ metrics:
   show_weekend_in_day_of_week: false  # 曜日別活動で土日を表示（falseで平日のみ）
 ```
 
+#### HTML出力
+
+`--metrics-html` フラグでメトリクスをHTMLファイルとして出力できます。TUIと同等の全セクション（リードタイム統計、PR一覧、レビューフェーズ分解、曜日別統計等）が含まれ、外部CSS/JS依存なしの単体HTMLファイルとして生成されます。
+
+```bash
+# デフォルトのファイル名（metrics.html）で出力し、ブラウザで自動表示
+tig-gh --metrics-html
+
+# 出力先を指定
+tig-gh --metrics-html=weekly-report.html
+```
+
+MetricsConfigの表示設定（`show_pr_lead_times`, `show_review_phases`等）はHTML出力にも反映されます。
+
 #### パフォーマンスとプログレス表示
 
 読み込み処理を最適化した結果、大規模リポジトリ構成でも以前より高速にメトリクスを取得できます。取得中は以下の情報がステータスバーに表示されます：
@@ -245,6 +265,7 @@ metrics:
 
 **週次定例でメトリクスを共有:**
 - `y`キーでメトリクス全体をMarkdown形式でコピー
+- `--metrics-html`でHTMLレポートを生成し、ブラウザで共有
 - 定例資料やドキュメントに貼り付けて週次比較が可能
 - 先週のデータと並べて改善状況を可視化
 
