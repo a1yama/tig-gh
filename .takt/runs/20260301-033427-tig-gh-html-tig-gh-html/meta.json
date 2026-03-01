@@ -1,0 +1,13 @@
+{
+  "task": "# タスク指示書: tig-gh マトリクスビューのHTML出力機能\n\n## 概要\n\ntig-ghのメトリクスビュー（マトリクスビュー）の内容をHTMLファイルとして生成し、ブラウザで閲覧できるようにする。\n\n## 背景\n\n- 現在、メトリクスビューはTUI（bubbletea）でのみ表示可能\n- Markdown形式でのクリップボードコピー機能は既に実装済み（`metrics_view.go` の `toMarkdown()` 系関数）\n- データソースはGitHub API（go-github REST API v3）で、TUI版と同じデータソースを使用する\n\n## 作業内容\n\n### 優先度: 高\n\n#### 1. HTML生成ロジックの実装\n- メトリクスデータ（`models.LeadTimeMetrics`）をHTMLとして出力する機能を作成する\n- 既存の `toMarkdown()` 系関数（`metrics_view.go` 行1417〜）が出力する全セクションに対応するHTMLを生成する\n  - 全体リードタイム統計\n  - 個別PRリードタイム一覧テーブル\n  - レビューフェーズ分解（作成→レビュー→承認→マージ）\n  - 曜日ごとのマージ/レビュー件数\n  - 今週と先週の比較\n  - PR品質問題一覧\n  - 滞留PR一覧\n  - リポジトリごとの統計\n- HTMLはスタイル込みの単体ファイル（外部CSS/JS依存なし）として生成する\n\n#### 2. CLIからのHTML出力コマンド\n- CLIからHTML生成を実行できるようにする（コマンド設計はエージェントに委ねる）\n- GitHub APIからデータを取得し、HTMLファイルを生成・出力する\n- 既存のユースケース層（`FetchLeadTimeMetricsUseCase`）を再利用する\n\n### 優先度: 中\n\n#### 3. 表示設定の反映\n- 既存の `MetricsConfig` の設定（`ShowPRLeadTimes`, `ShowReviewPhases` 等）をHTML出力にも反映する\n\n## 参照資料\n\n- `internal/ui/views/metrics_view.go` — TUI表示およびMarkdown生成の実装\n- `internal/domain/models/metrics.go` — メトリクスデータの型定義\n- `internal/domain/models/config.go` — `MetricsConfig` の設定項目\n- `internal/app/usecase/fetch_lead_time_metrics.go` — メトリクスデータ取得のユースケース\n- `internal/infra/github/metrics_repo_impl.go` — GitHub APIクライアント実装\n- `cmd/tig-gh/main.go` — CLIエントリーポイント\n\n## 確認方法\n\n1. CLIコマンドでHTMLファイルが生成されること\n2. 生成されたHTMLをブラウザで開き、TUI版と同等の情報が表示されること\n3. 既存のTUI機能に影響がないこと（ビルド・既存テストがパスすること）\n\n## 注意事項\n\n- エラー（パーミッションエラー、ビルドエラー等）で詰まった場合は、同じ操作を繰り返さず、エラー内容を報告して助けを求めること",
+  "piece": "default",
+  "runSlug": "20260301-033427-tig-gh-html-tig-gh-html",
+  "runRoot": ".takt/runs/20260301-033427-tig-gh-html-tig-gh-html",
+  "reportDirectory": ".takt/runs/20260301-033427-tig-gh-html-tig-gh-html/reports",
+  "contextDirectory": ".takt/runs/20260301-033427-tig-gh-html-tig-gh-html/context",
+  "logsDirectory": ".takt/runs/20260301-033427-tig-gh-html-tig-gh-html/logs",
+  "status": "completed",
+  "startTime": "2026-03-01T03:34:27.635Z",
+  "endTime": "2026-03-01T04:43:14.388Z",
+  "iterations": 8
+}

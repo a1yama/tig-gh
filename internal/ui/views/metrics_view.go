@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/a1yama/tig-gh/internal/domain/models"
+	"github.com/a1yama/tig-gh/internal/shared/metricsformat"
 	"github.com/a1yama/tig-gh/internal/ui/components"
 	"github.com/a1yama/tig-gh/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
@@ -668,7 +669,7 @@ func (m *MetricsView) renderPRLeadTimeSection() []string {
 			prefix = ">  "
 		}
 
-		leadTimeStr := fmt.Sprintf("%7s", formatDuration(entry.LeadTime))
+		leadTimeStr := fmt.Sprintf("%7s", metricsformat.FormatDuration(entry.LeadTime))
 		repoAndNumber := fmt.Sprintf("%s #%d", entry.Repository, entry.Number)
 		title := trimColumnText(entry.Title, 30)
 		mergedDate := entry.MergedAt.Format("2006-01-02")
@@ -724,8 +725,8 @@ func (m *MetricsView) renderOverallSection() []string {
 	}
 
 	lines = append(lines, fmt.Sprintf("Average: %s  Median: %s  PRs: %d",
-		formatDuration(stat.Average),
-		formatDuration(stat.Median),
+		metricsformat.FormatDuration(stat.Average),
+		metricsformat.FormatDuration(stat.Median),
 		stat.Count,
 	))
 
@@ -735,7 +736,7 @@ func (m *MetricsView) renderOverallSection() []string {
 func (m *MetricsView) renderStagnantPRSection() []string {
 	stagnant := m.metrics.StagnantPRs
 	lines := []string{
-		styles.HeaderStyle.Render(fmt.Sprintf("Stagnant PRs (Open > %s)", formatDuration(stagnant.Threshold))),
+		styles.HeaderStyle.Render(fmt.Sprintf("Stagnant PRs (Open > %s)", metricsformat.FormatDuration(stagnant.Threshold))),
 	}
 
 	// フィルタリングされた滞留PRリストを作成
@@ -777,7 +778,7 @@ func (m *MetricsView) renderStagnantPRSection() []string {
 					idx+1,
 					pr.Repository,
 					pr.Number,
-					formatDuration(pr.Age),
+					metricsformat.FormatDuration(pr.Age),
 					pr.Title,
 				),
 			)
@@ -842,7 +843,7 @@ func (m *MetricsView) renderReviewPhaseSection() []string {
 	}
 
 	for _, phase := range phases {
-		line := fmt.Sprintf("  %-30s avg %s (%d PRs)", phase.label, formatDuration(phase.duration), phaseMetrics.SampleCount)
+		line := fmt.Sprintf("  %-30s avg %s (%d PRs)", phase.label, metricsformat.FormatDuration(phase.duration), phaseMetrics.SampleCount)
 		if longest > 0 && phase.duration == longest {
 			line += " ← ボトルネック"
 		}
@@ -850,7 +851,7 @@ func (m *MetricsView) renderReviewPhaseSection() []string {
 	}
 
 	lines = append(lines, "  "+strings.Repeat("─", 45))
-	lines = append(lines, fmt.Sprintf("  %-30s avg %s", "Total Lead Time:", formatDuration(phaseMetrics.TotalLeadTime)))
+	lines = append(lines, fmt.Sprintf("  %-30s avg %s", "Total Lead Time:", metricsformat.FormatDuration(phaseMetrics.TotalLeadTime)))
 
 	return lines
 }
@@ -886,7 +887,7 @@ func (m *MetricsView) renderDayOfWeekSection() []string {
 
 	headers := make([]string, len(displayDays))
 	for i, day := range displayDays {
-		headers[i] = fmt.Sprintf("%4s", shortWeekday(day))
+		headers[i] = fmt.Sprintf("%4s", metricsformat.ShortWeekday(day))
 	}
 	lines = append(lines, fmt.Sprintf("%-8s%s", "", strings.Join(headers, " ")))
 
@@ -952,7 +953,6 @@ func (m *MetricsView) renderWeeklyComparisonSection() []string {
 	return lines
 }
 
-const maxQualityIssuesToDisplay = 5
 
 type qualityIssueDisplay struct {
 	issue models.PRQualityIssue
@@ -994,8 +994,8 @@ func (m *MetricsView) renderPRQualitySection() []string {
 	}
 
 	displayCount := len(filtered)
-	if displayCount > maxQualityIssuesToDisplay {
-		displayCount = maxQualityIssuesToDisplay
+	if displayCount > metricsformat.MaxQualityIssuesToDisplay {
+		displayCount = metricsformat.MaxQualityIssuesToDisplay
 	}
 
 	lines := []string{
@@ -1176,8 +1176,8 @@ func (m *MetricsView) renderRepositorySection() []string {
 		line := fmt.Sprintf(
 			"%-40s %12s %12s %6d",
 			name,
-			formatDuration(stat.Average),
-			formatDuration(stat.Median),
+			metricsformat.FormatDuration(stat.Average),
+			metricsformat.FormatDuration(stat.Median),
 			stat.Count,
 		)
 		lines = append(lines, line)
@@ -1308,68 +1308,12 @@ func (m *MetricsView) maxScroll() int {
 	return len(lines) - available
 }
 
-func formatDuration(d time.Duration) string {
-	if d <= 0 {
-		return "-"
-	}
-
-	d = d.Round(time.Minute)
-
-	days := d / (24 * time.Hour)
-	d -= days * 24 * time.Hour
-	hours := d / time.Hour
-	d -= hours * time.Hour
-	minutes := d / time.Minute
-
-	parts := []string{}
-	if days > 0 {
-		parts = append(parts, fmt.Sprintf("%dd", days))
-	}
-	if hours > 0 {
-		parts = append(parts, fmt.Sprintf("%dh", hours))
-	}
-	if minutes > 0 {
-		parts = append(parts, fmt.Sprintf("%dm", minutes))
-	}
-	if len(parts) == 0 {
-		parts = append(parts, fmt.Sprintf("%ds", int(d.Seconds())))
-	}
-
-	return strings.Join(parts, " ")
-}
-
-var weekdayDisplayOrder = []time.Weekday{
-	time.Monday,
-	time.Tuesday,
-	time.Wednesday,
-	time.Thursday,
-	time.Friday,
-	time.Saturday,
-	time.Sunday,
-}
-
-var weekdaysOnly = []time.Weekday{
-	time.Monday,
-	time.Tuesday,
-	time.Wednesday,
-	time.Thursday,
-	time.Friday,
-}
-
 // getDisplayDays は表示する曜日のリストを返す（設定により土日を除外）
 func (m *MetricsView) getDisplayDays() []time.Weekday {
 	if m.config != nil && !m.config.ShowWeekendInDayOfWeek {
-		return weekdaysOnly
+		return metricsformat.WeekdaysOnly
 	}
-	return weekdayDisplayOrder
-}
-
-func shortWeekday(day time.Weekday) string {
-	name := day.String()
-	if len(name) <= 3 {
-		return name
-	}
-	return name[:3]
+	return metricsformat.WeekdayDisplayOrder
 }
 
 func formatChangePercent(value float64) string {
@@ -1517,8 +1461,8 @@ func (m *MetricsView) overallToMarkdown() string {
 		return sb.String()
 	}
 
-	sb.WriteString(fmt.Sprintf("- **Average**: %s\n", formatDuration(stat.Average)))
-	sb.WriteString(fmt.Sprintf("- **Median**: %s\n", formatDuration(stat.Median)))
+	sb.WriteString(fmt.Sprintf("- **Average**: %s\n", metricsformat.FormatDuration(stat.Average)))
+	sb.WriteString(fmt.Sprintf("- **Median**: %s\n", metricsformat.FormatDuration(stat.Median)))
 	sb.WriteString(fmt.Sprintf("- **PRs**: %d\n", stat.Count))
 
 	return sb.String()
@@ -1539,7 +1483,7 @@ func (m *MetricsView) prLeadTimesToMarkdown() string {
 	sb.WriteString("|---|-----------|------------|----|---------|--------------|\n")
 
 	for idx, entry := range entries {
-		leadTimeStr := formatDuration(entry.LeadTime)
+		leadTimeStr := metricsformat.FormatDuration(entry.LeadTime)
 		repoAndNumber := fmt.Sprintf("%s [#%d](%s)", entry.Repository, entry.Number, entry.HTMLURL)
 		title := entry.Title
 		mergedDate := entry.MergedAt.Format("2006-01-02")
@@ -1610,13 +1554,13 @@ func (m *MetricsView) reviewPhasesToMarkdown() string {
 		}
 		sb.WriteString(fmt.Sprintf("- **%s**: %s (avg, %d PRs)%s\n",
 			phase.label,
-			formatDuration(phase.duration),
+			metricsformat.FormatDuration(phase.duration),
 			phaseMetrics.SampleCount,
 			bottleneck,
 		))
 	}
 
-	sb.WriteString(fmt.Sprintf("- **Total Lead Time**: %s (avg)\n", formatDuration(phaseMetrics.TotalLeadTime)))
+	sb.WriteString(fmt.Sprintf("- **Total Lead Time**: %s (avg)\n", metricsformat.FormatDuration(phaseMetrics.TotalLeadTime)))
 
 	return sb.String()
 }
@@ -1650,7 +1594,7 @@ func (m *MetricsView) dayOfWeekToMarkdown() string {
 	headerRow := "|  |"
 	separatorRow := "|---|"
 	for _, day := range displayDays {
-		headerRow += fmt.Sprintf(" %s |", shortWeekday(day))
+		headerRow += fmt.Sprintf(" %s |", metricsformat.ShortWeekday(day))
 		separatorRow += "-----|"
 	}
 	sb.WriteString(headerRow + "\n")
@@ -1739,8 +1683,8 @@ func (m *MetricsView) qualityIssuesToMarkdown() string {
 	}
 
 	displayCount := len(filtered)
-	if displayCount > maxQualityIssuesToDisplay {
-		displayCount = maxQualityIssuesToDisplay
+	if displayCount > metricsformat.MaxQualityIssuesToDisplay {
+		displayCount = metricsformat.MaxQualityIssuesToDisplay
 	}
 
 	sb.WriteString(fmt.Sprintf("## PR Quality Issues (%d issues)\n\n", displayCount))
@@ -1794,7 +1738,7 @@ func (m *MetricsView) stagnantPRsToMarkdown() string {
 	var sb strings.Builder
 
 	stagnant := m.metrics.StagnantPRs
-	sb.WriteString(fmt.Sprintf("## Stagnant PRs (Open > %s)\n\n", formatDuration(stagnant.Threshold)))
+	sb.WriteString(fmt.Sprintf("## Stagnant PRs (Open > %s)\n\n", metricsformat.FormatDuration(stagnant.Threshold)))
 
 	filteredPRs := stagnant.LongestWaiting
 	if m.filteredRepo != "" {
@@ -1823,7 +1767,7 @@ func (m *MetricsView) stagnantPRsToMarkdown() string {
 			idx+1,
 			pr.Repository,
 			pr.Number,
-			formatDuration(pr.Age),
+			metricsformat.FormatDuration(pr.Age),
 			pr.Title,
 		))
 	}
@@ -1864,8 +1808,8 @@ func (m *MetricsView) repositoryStatsToMarkdown() string {
 		stat := m.metrics.ByRepository[name]
 		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %d |\n",
 			name,
-			formatDuration(stat.Average),
-			formatDuration(stat.Median),
+			metricsformat.FormatDuration(stat.Average),
+			metricsformat.FormatDuration(stat.Median),
 			stat.Count,
 		))
 	}
